@@ -680,7 +680,14 @@ const Join = () => {
                 Signed in as <strong className="text-foreground">{session.name}</strong>
               </span>
               <Button size="sm" variant="outline" className="rounded-full"
-                onClick={() => navigate(`/members/${session.githubUsername}`)}>
+                onClick={() => {
+                  const target = session.githubUsername?.trim();
+                  if (target) {
+                    navigate(`/members/${target}`);
+                  } else {
+                    navigate('/members');
+                  }
+                }}>
                 View My Profile →
               </Button>
             </div>

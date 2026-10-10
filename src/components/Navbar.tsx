@@ -1,15 +1,15 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Menu, X } from "lucide-react";
+import { Menu, X, LogOut } from "lucide-react";
 import { Link } from "react-router-dom";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { motion, AnimatePresence } from "framer-motion";
-import { getStudentSession } from "@/lib/studentStore";
+import { useStudentAuth } from "@/hooks/useStudentAuth";
 
 const Navbar = () => {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const studentSession = getStudentSession();
+  const { session: studentSession, logout } = useStudentAuth();
 
   useEffect(() => {
     const handleScroll = () => {
@@ -88,27 +88,48 @@ const Navbar = () => {
           {/* Right actions */}
           <div className="hidden md:flex items-center space-x-4 shrink-0">
             <ThemeToggle />
-            {studentSession && (
+            {studentSession ? (
               <>
                 <Link to="/members"
                   className="text-sm font-light tracking-wider text-foreground/70 hover:text-foreground transition-colors duration-300">
                   Members
                 </Link>
-                <Link to={`/members/${studentSession.githubUsername}`}
-                  className="flex items-center gap-2 text-sm font-light tracking-wider text-foreground/70 hover:text-foreground transition-colors duration-300">
-                  <img
-                    src={`https://avatars.githubusercontent.com/${studentSession.githubUsername}?s=32`}
-                    alt={studentSession.name}
-                    className="w-7 h-7 rounded-full ring-2 ring-primary/30 object-cover"
-                  />
-                </Link>
+                {studentSession.githubUsername ? (
+                  <Link to={`/members/${studentSession.githubUsername}`}
+                    className="flex items-center gap-2 text-sm font-light tracking-wider text-foreground/70 hover:text-foreground transition-colors duration-300 group"
+                    title={`View profile (@${studentSession.githubUsername})`}>
+                    <img
+                      src={`https://github.com/${studentSession.githubUsername}.png?size=64`}
+                      alt={studentSession.name}
+                      className="w-7 h-7 rounded-full ring-2 ring-primary/30 object-cover group-hover:ring-primary transition-all"
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none';
+                        const fallback = e.currentTarget.parentElement?.querySelector('.avatar-fallback');
+                        if (fallback) (fallback as HTMLElement).style.display = 'flex';
+                      }}
+                    />
+                    <div className="avatar-fallback w-7 h-7 rounded-full ring-2 ring-primary/30 bg-primary/20 hidden items-center justify-center text-[10px] font-heading font-medium text-primary">
+                      {studentSession.name ? studentSession.name[0].toUpperCase() : 'U'}
+                    </div>
+                  </Link>
+                ) : null}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={logout}
+                  className="rounded-full px-4 text-xs font-light tracking-wider text-foreground/70 hover:text-destructive hover:border-destructive/40 transition-all duration-300 flex items-center gap-1.5"
+                >
+                  <LogOut size={12} />
+                  Sign Out
+                </Button>
               </>
+            ) : (
+              <Link to="/join">
+                <Button size="sm" className="rounded-full px-6 font-light tracking-wider bg-primary/10 text-primary border border-primary/20 hover:bg-primary hover:text-primary-foreground transition-all duration-300">
+                  Join Now
+                </Button>
+              </Link>
             )}
-            <Link to="/join">
-              <Button size="sm" className="rounded-full px-6 font-light tracking-wider bg-primary/10 text-primary border border-primary/20 hover:bg-primary hover:text-primary-foreground transition-all duration-300">
-                Join Now
-              </Button>
-            </Link>
           </div>
 
           {/* Mobile Menu Button */}
@@ -175,27 +196,46 @@ const Navbar = () => {
                   transition={{ delay: 0.1 + navLinks.length * 0.05 }}
                   className="w-full pt-6 space-y-3"
                 >
-                  {studentSession && (
+                  {studentSession ? (
                     <>
                       <Link to="/members" onClick={() => setIsMobileMenuOpen(false)}>
                         <Button size="lg" variant="outline" className="w-full rounded-full font-light tracking-widest">
                           Members Directory
                         </Button>
                       </Link>
-                      <Link to={`/members/${studentSession.githubUsername}`} onClick={() => setIsMobileMenuOpen(false)}>
-                        <Button size="lg" variant="outline" className="w-full rounded-full font-light tracking-widest gap-2">
-                          <img src={`https://avatars.githubusercontent.com/${studentSession.githubUsername}?s=24`}
-                            className="w-5 h-5 rounded-full" alt="" />
-                          My Profile
-                        </Button>
-                      </Link>
+                      {studentSession.githubUsername ? (
+                        <Link to={`/members/${studentSession.githubUsername}`} onClick={() => setIsMobileMenuOpen(false)}>
+                          <Button size="lg" variant="outline" className="w-full rounded-full font-light tracking-widest gap-2">
+                            <img
+                              src={`https://github.com/${studentSession.githubUsername}.png?size=48`}
+                              className="w-5 h-5 rounded-full"
+                              alt=""
+                              onError={(e) => { e.currentTarget.style.display = 'none'; }}
+                            />
+                            My Profile
+                          </Button>
+                        </Link>
+                      ) : null}
+                      <Button
+                        size="lg"
+                        variant="destructive"
+                        className="w-full rounded-full font-light tracking-widest gap-2"
+                        onClick={() => {
+                          setIsMobileMenuOpen(false);
+                          logout();
+                        }}
+                      >
+                        <LogOut size={16} />
+                        Sign Out
+                      </Button>
                     </>
+                  ) : (
+                    <Link to="/join" onClick={() => setIsMobileMenuOpen(false)}>
+                      <Button size="lg" className="w-full rounded-full font-light tracking-widest bg-primary text-primary-foreground shadow-xl shadow-primary/20">
+                        Join Now
+                      </Button>
+                    </Link>
                   )}
-                  <Link to="/join" onClick={() => setIsMobileMenuOpen(false)}>
-                    <Button size="lg" className="w-full rounded-full font-light tracking-widest bg-primary text-primary-foreground shadow-xl shadow-primary/20">
-                      {studentSession ? "My Account" : "Join Now"}
-                    </Button>
-                  </Link>
                 </motion.div>
               </div>
             </motion.div>

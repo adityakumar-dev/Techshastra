@@ -294,15 +294,6 @@ const MemberProfile = () => {
 
   // ── Error states ─────────────────────────────────────────────────────────
 
-  if (status === "loading") return (
-    <div className="min-h-screen flex items-center justify-center bg-background">
-      <div className="flex flex-col items-center gap-4">
-        <Loader2 className="w-10 h-10 animate-spin text-primary" />
-        <p className="text-foreground/40 text-sm font-light tracking-widest uppercase">Loading Profile</p>
-      </div>
-    </div>
-  );
-
   if (status === "not_found") return (
     <div className="min-h-screen bg-background">
       <Navbar />
@@ -330,7 +321,27 @@ const MemberProfile = () => {
     </div>
   );
 
-  if (!student) return null;
+  if (status === "loading" || !student) return (
+    <div className="min-h-screen bg-background flex flex-col justify-between">
+      <Navbar />
+      <div className="flex-1 flex items-center justify-center py-24">
+        <div className="flex flex-col items-center gap-4 text-center px-4 max-w-md">
+          <div className="w-16 h-16 rounded-3xl glass flex items-center justify-center shadow-xl">
+            <Loader2 className="w-8 h-8 animate-spin text-primary" />
+          </div>
+          <div className="space-y-1">
+            <p className="text-xl font-heading font-light tracking-wide text-foreground">
+              {username ? `Loading @${username}` : "Loading Profile"}
+            </p>
+            <p className="text-foreground/40 text-xs font-light">
+              Connecting to TechShastra and syncing developer statistics...
+            </p>
+          </div>
+        </div>
+      </div>
+      <Footer />
+    </div>
+  );
 
   // ── Derived data ─────────────────────────────────────────────────────────
 

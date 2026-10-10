@@ -52,58 +52,107 @@ export const getAllStudents = async (includeInactive = false): Promise<FullStude
 
 export const getStudentByUsername = async (username: string): Promise<FullStudentProfile | null> => {
   if (!isSupabaseConfigured()) return null;
+  const cleanUsername = username.trim().toLowerCase();
 
-  const { data, error } = await supabase
-    .from('student_profiles')
-    .select(`
-      *,
-      profiles:user_id (email, full_name, avatar_url),
-      education:student_education (*),
-      experience:student_experience (*),
-      certifications:student_certifications (*)
-    `)
-    .eq('username', username)
-    .single();
+  try {
+    const { data } = await supabase
+      .from('student_profiles')
+      .select(`
+        *,
+        profiles:user_id (email, full_name, avatar_url),
+        education:student_education (*),
+        experience:student_experience (*),
+        certifications:student_certifications (*)
+      `)
+      .ilike('username', cleanUsername)
+      .maybeSingle();
 
-  if (error || !data) return null;
+    if (data) {
+      return {
+        ...data,
+        name: (data as any).profiles?.full_name || (data as any).name || data.username,
+        email: (data as any).profiles?.email || (data as any).email || '',
+        githubUsername: (data as any).github_username || (data as any).githubUsername,
+        education: (data as any).education || [],
+        experience: (data as any).experience || [],
+        certifications: (data as any).certifications || [],
+      };
+    }
+  } catch (_err) {}
 
-  return {
-    ...data,
-    name: (data as any).profiles?.full_name || (data as any).name || data.username,
-    email: (data as any).profiles?.email || (data as any).email || '',
-    githubUsername: (data as any).github_username || (data as any).githubUsername,
-    education: (data as any).education || [],
-    experience: (data as any).experience || [],
-    certifications: (data as any).certifications || [],
-  };
+  // Resilient fallback: simple query without relation joins
+  try {
+    const { data: fallback } = await supabase
+      .from('student_profiles')
+      .select('*')
+      .ilike('username', cleanUsername)
+      .maybeSingle();
+
+    if (fallback) {
+      return {
+        ...fallback,
+        name: fallback.username,
+        githubUsername: (fallback as any).github_username || (fallback as any).githubUsername,
+        education: [],
+        experience: [],
+        certifications: [],
+      } as any;
+    }
+  } catch (_e) {}
+
+  return null;
 };
 
 export const getStudentByUserId = async (userId: string): Promise<FullStudentProfile | null> => {
   if (!isSupabaseConfigured()) return null;
 
-  const { data, error } = await supabase
-    .from('student_profiles')
-    .select(`
-      *,
-      profiles:user_id (email, full_name, avatar_url),
-      education:student_education (*),
-      experience:student_experience (*),
-      certifications:student_certifications (*)
-    `)
-    .eq('user_id', userId)
-    .single();
+  try {
+    const { data } = await supabase
+      .from('student_profiles')
+      .select(`
+        *,
+        profiles:user_id (email, full_name, avatar_url),
+        education:student_education (*),
+        experience:student_experience (*),
+        certifications:student_certifications (*)
+      `)
+      .eq('user_id', userId)
+      .maybeSingle();
 
-  if (error || !data) return null;
+    if (data) {
+      return {
+        ...data,
+        name: (data as any).profiles?.full_name || (data as any).name || data.username,
+        email: (data as any).profiles?.email || (data as any).email || '',
+        githubUsername: (data as any).github_username || (data as any).githubUsername,
+        education: (data as any).education || [],
+        experience: (data as any).experience || [],
+        certifications: (data as any).certifications || [],
+      };
+    }
+  } catch (_err) {}
 
-  return {
-    ...data,
-    name: (data as any).profiles?.full_name || (data as any).name || data.username,
-    email: (data as any).profiles?.email || (data as any).email || '',
-    githubUsername: (data as any).github_username || (data as any).githubUsername,
-    education: (data as any).education || [],
-    experience: (data as any).experience || [],
-    certifications: (data as any).certifications || [],
-  };
+  // Resilient fallback: direct query without joins
+  try {
+    const { data: fallback } = await supabase
+      .from('student_profiles')
+      .select('*')
+      .eq('user_id', userId)
+      .maybeSingle();
+
+    if (fallback) {
+      return {
+        ...fallback,
+        name: fallback.username,
+        githubUsername: (fallback as any).github_username || (fallback as any).githubUsername,
+        education: [],
+        experience: [],
+        certifications: [],
+      } as any;
+    }
+  } catch (_e) {}
+
+  return null;
 };
 
 export interface RegisterStudentInput {
@@ -136,6 +185,8 @@ export const registerStudentProfile = async (
       data: {
         full_name: input.name.trim(),
         role: 'student_member',
+        github_username: input.githubUsername.trim(),
+        avatar_url: `https://github.com/${input.githubUsername.trim()}.png`,
       },
       emailRedirectTo: typeof window !== 'undefined' ? window.location.origin : undefined,
     },
@@ -183,6 +234,17 @@ export const registerStudentProfile = async (
     console.error('Failed to create student_profiles record in Supabase:', studentError);
     throw studentError;
   }
+
+  // 3. Ensure profiles record has avatar_url and details
+  try {
+    await supabase.from('profiles').upsert({
+      id: userId,
+      email: input.email.trim().toLowerCase(),
+      full_name: input.name.trim(),
+      role: 'student_member',
+      avatar_url: `https://github.com/${input.githubUsername.trim()}.png`,
+    }, { onConflict: 'id' });
+  } catch (_profileErr) {}
 
   return {
     ...studentRecord,

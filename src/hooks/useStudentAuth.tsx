@@ -38,7 +38,20 @@ export const StudentAuthProvider = ({ children }: { children: ReactNode }) => {
       const remote = await signInStudentRemote(email, password);
       if (remote) {
         const sName = remote.student?.name || remote.user.user_metadata?.full_name || email;
-        const sGh = remote.student?.githubUsername || remote.user.user_metadata?.github_username || "";
+        let sGh = remote.student?.githubUsername || (remote.student as any)?.github_username || remote.user.user_metadata?.github_username || "";
+        
+        // If sGh is empty, direct fallback check on student_profiles table
+        if (!sGh) {
+          try {
+            const { data: sp } = await supabase
+              .from('student_profiles')
+              .select('github_username, username')
+              .eq('user_id', remote.user.id)
+              .maybeSingle();
+            if (sp) sGh = sp.github_username || sp.username || "";
+          } catch (_e) {}
+        }
+
         const newSession: StudentSession = {
           studentId: remote.student?.id || remote.user.id,
           githubUsername: sGh,
@@ -80,10 +93,22 @@ export const StudentAuthProvider = ({ children }: { children: ReactNode }) => {
       } else if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
         if (authSession?.user) {
           const current = getStudentSession();
-          if (!current || current.studentId !== authSession.user.id) {
+          if (!current || current.studentId !== authSession.user.id || !current.githubUsername) {
             const student = await getStudentByUserId(authSession.user.id);
             const sName = student?.name || authSession.user.user_metadata?.full_name || authSession.user.email || '';
-            const sGh = student?.githubUsername || authSession.user.user_metadata?.github_username || '';
+            let sGh = student?.githubUsername || (student as any)?.github_username || authSession.user.user_metadata?.github_username || '';
+            
+            if (!sGh) {
+              try {
+                const { data: sp } = await supabase
+                  .from('student_profiles')
+                  .select('github_username, username')
+                  .eq('user_id', authSession.user.id)
+                  .maybeSingle();
+                if (sp) sGh = sp.github_username || sp.username || '';
+              } catch (_e) {}
+            }
+
             const newSession: StudentSession = {
               studentId: student?.id || authSession.user.id,
               githubUsername: sGh,
@@ -103,18 +128,40 @@ export const StudentAuthProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   // On mount: validate stored cookie session against Supabase.
-  // If the user was deleted from the Supabase dashboard, their cookie
-  // is stale — clear it immediately so the UI reflects reality.
+  // 1. If user deleted in Supabase, clear cookie.
+  // 2. If cookie exists but lacks githubUsername, self-heal immediately.
   useEffect(() => {
     if (!isSupabaseConfigured()) return;
     const cookieSession = getStudentSession();
     if (!cookieSession) return; // No local session, nothing to validate
 
-    supabase.auth.getSession().then(({ data: { session: authSession } }) => {
+    supabase.auth.getSession().then(async ({ data: { session: authSession } }) => {
       if (!authSession) {
         // Supabase has no active session — cookie is orphaned, clear it
         signOutStudent();
         setSession(null);
+      } else if (!cookieSession.githubUsername && authSession.user) {
+        // Self-heal: recover missing githubUsername from student_profiles or user_metadata
+        let sGh = authSession.user.user_metadata?.github_username || "";
+        if (!sGh) {
+          try {
+            const { data: sp } = await supabase
+              .from('student_profiles')
+              .select('github_username, username')
+              .eq('user_id', authSession.user.id)
+              .maybeSingle();
+            if (sp) sGh = sp.github_username || sp.username || "";
+          } catch (_e) {}
+        }
+
+        if (sGh) {
+          const updatedSession: StudentSession = {
+            ...cookieSession,
+            githubUsername: sGh,
+          };
+          document.cookie = `ts_student_session=${encodeURIComponent(JSON.stringify(updatedSession))}; max-age=${7 * 86400}; path=/; SameSite=Lax`;
+          setSession(updatedSession);
+        }
       }
     });
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
