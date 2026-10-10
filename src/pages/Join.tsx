@@ -256,7 +256,14 @@ const SignupForm = ({ onSuccess }: { onSuccess: (username: string) => void }) =>
           setLoading(false);
           return;
         }
-        console.warn("Supabase registration warning:", remoteErr);
+        console.error("Supabase registration error:", remoteErr);
+        toast({
+          title: "Registration Failed",
+          description: remoteErr?.message || "Could not create account in database. Please verify your Supabase auth settings.",
+          variant: "destructive",
+        });
+        setLoading(false);
+        return;
       }
 
       // 2. Also keep local store updated for seamless offline/fallback
