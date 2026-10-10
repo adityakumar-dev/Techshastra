@@ -103,6 +103,23 @@ export const StudentAuthProvider = ({ children }: { children: ReactNode }) => {
     };
   }, []);
 
+  // On mount: validate stored cookie session against Supabase.
+  // If the user was deleted from the Supabase dashboard, their cookie
+  // is stale — clear it immediately so the UI reflects reality.
+  useEffect(() => {
+    if (!isSupabaseConfigured()) return;
+    const cookieSession = getStudentSession();
+    if (!cookieSession) return; // No local session, nothing to validate
+
+    supabase.auth.getSession().then(({ data: { session: authSession } }) => {
+      if (!authSession) {
+        // Supabase has no active session — cookie is orphaned, clear it
+        signOutStudent();
+        setSession(null);
+      }
+    });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   return (
     <StudentAuthContext.Provider value={{ session, login, logout, refresh }}>
       {children}
