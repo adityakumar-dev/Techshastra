@@ -137,6 +137,7 @@ export const registerStudentProfile = async (
         full_name: input.name.trim(),
         role: 'student_member',
       },
+      emailRedirectTo: typeof window !== 'undefined' ? window.location.origin : undefined,
     },
   });
 
