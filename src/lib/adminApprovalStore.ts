@@ -89,27 +89,47 @@ if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
 
 // Global Supabase Realtime Channel for Cross-Device Approval
 let supabaseBroadcastChannel: ReturnType<typeof supabase.channel> | null = null;
-if (isSupabaseConfigured()) {
-  try {
-    supabaseBroadcastChannel = supabase.channel('ts_admin_login_approvals');
-    supabaseBroadcastChannel
-      .on('broadcast', { event: 'request_update' }, ({ payload }) => {
-        if (!payload || !payload.id) return;
-        const current = getStoredAdminLoginRequests();
-        const exists = current.find((r) => r.id === payload.id);
-        let next: AdminLoginRequest[];
-        if (exists) {
-          next = current.map((r) => (r.id === payload.id ? { ...r, ...payload } : r));
-        } else {
-          next = [payload, ...current];
-        }
-        saveStoredAdminLoginRequests(next);
-        notifyLocalListeners();
-      })
-      .subscribe();
-  } catch (_e) {
-    supabaseBroadcastChannel = null;
+let isChannelSubscribed = false;
+
+export const getSupabaseApprovalChannel = () => {
+  if (!isSupabaseConfigured()) return null;
+  if (!supabaseBroadcastChannel) {
+    try {
+      supabaseBroadcastChannel = supabase.channel('ts_admin_login_approvals');
+      supabaseBroadcastChannel
+        .on('broadcast', { event: 'request_update' }, ({ payload }) => {
+          if (!payload || !payload.id) return;
+          const current = getStoredAdminLoginRequests();
+          const exists = current.find((r) => r.id === payload.id);
+          let next: AdminLoginRequest[];
+          if (exists) {
+            next = current.map((r) => (r.id === payload.id ? { ...r, ...payload } : r));
+          } else {
+            next = [payload, ...current];
+          }
+          saveStoredAdminLoginRequests(next);
+          notifyLocalListeners();
+        })
+        .on('broadcast', { event: 'request_sync_query' }, () => {
+          // If this client has any pending requests, broadcast them
+          const pending = getPendingAdminLoginRequests();
+          for (const p of pending) {
+            broadcastChange(p);
+          }
+        })
+        .subscribe((status) => {
+          isChannelSubscribed = status === 'SUBSCRIBED';
+        });
+    } catch (_e) {
+      supabaseBroadcastChannel = null;
+    }
   }
+  return supabaseBroadcastChannel;
+};
+
+// Initialize early
+if (typeof window !== 'undefined') {
+  getSupabaseApprovalChannel();
 }
 
 const notifyLocalListeners = () => {
@@ -125,13 +145,47 @@ const broadcastChange = (req: AdminLoginRequest) => {
       broadcastChannel.postMessage({ type: 'request_update', payload: req });
     } catch (_e) {}
   }
-  if (supabaseBroadcastChannel && isSupabaseConfigured()) {
+
+  const channel = getSupabaseApprovalChannel();
+  if (channel) {
+    const doSend = () => {
+      try {
+        channel.send({
+          type: 'broadcast',
+          event: 'request_update',
+          payload: req,
+        }).then((res) => {
+          if (res !== 'ok') {
+            setTimeout(() => {
+              channel.send({
+                type: 'broadcast',
+                event: 'request_update',
+                payload: req,
+              }).catch(() => {});
+            }, 500);
+          }
+        }).catch(() => {});
+      } catch (_e) {}
+    };
+
+    if (isChannelSubscribed) {
+      doSend();
+    } else {
+      setTimeout(doSend, 400);
+    }
+  }
+};
+
+// Request sync from any active peers
+export const queryRealtimeRequestsSync = () => {
+  const channel = getSupabaseApprovalChannel();
+  if (channel) {
     try {
-      supabaseBroadcastChannel.send({
+      channel.send({
         type: 'broadcast',
-        event: 'request_update',
-        payload: req,
-      });
+        event: 'request_sync_query',
+        payload: {},
+      }).catch(() => {});
     } catch (_e) {}
   }
 };
@@ -298,6 +352,7 @@ export const subscribeToAdminLoginRequests = (
 ): (() => void) => {
   // Initial fire
   callback(getStoredAdminLoginRequests());
+  queryRealtimeRequestsSync();
 
   const handleUpdate = () => {
     callback(getStoredAdminLoginRequests());

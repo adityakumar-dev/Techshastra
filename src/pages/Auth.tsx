@@ -11,6 +11,7 @@ import { useNavigate } from "react-router-dom";
 import {
   verifyAdmin, setSuperAdminCredentials, isSuperAdminDefault, getAdminUsers,
   type AdminRole,
+  type AdminCredential,
   createAdminLoginRequest,
   cancelAdminLoginRequest,
   subscribeToSpecificRequest,
@@ -18,6 +19,7 @@ import {
   type AdminLoginRequest,
 } from "@/lib/adminStore";
 import { registerAdminSession, logAdminAction } from "@/lib/services/adminService";
+import { supabase, isSupabaseConfigured } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -55,6 +57,23 @@ const Auth = () => {
 
   const navigate = useNavigate();
   const { toast } = useToast();
+
+  const handleNameChange = (val: string) => {
+    if (val.includes(",")) {
+      const parts = val.split(",").map((p) => p.trim());
+      if (parts.length >= 2) {
+        setName(parts[0]);
+        if (parts[1]) setMobile(parts[1].replace(/[^0-9]/g, ''));
+        if (parts[2]) setDob(parts[2]);
+        toast({
+          title: "Auto-detected credentials format",
+          description: `Name: ${parts[0]}, Mobile: ${parts[1] || ''}`,
+        });
+        return;
+      }
+    }
+    setName(val);
+  };
 
   // ── REALTIME APPROVAL LISTENER ──────────────────────────────────────
   useEffect(() => {
@@ -118,10 +137,34 @@ const Auth = () => {
     }
     setLoading(true);
     setAuthState("checking");
-    // Ensure latest admin credentials from Supabase are synced
-    await getAdminUsers();
 
-    const result = verifyAdmin(name.trim(), mobile.trim(), dob);
+    // Ensure latest admin credentials from Supabase are synced
+    let remoteCreds: AdminCredential[] = [];
+    try {
+      remoteCreds = await getAdminUsers();
+    } catch (_e) {}
+
+    let result = verifyAdmin(name.trim(), mobile.trim(), dob, remoteCreds);
+
+    // Direct resilient Supabase fallback in case remote sync had lag or table format discrepancy
+    if (!result.success && isSupabaseConfigured()) {
+      try {
+        const { data: dbCreds } = await supabase.from('admin_credentials').select('*').limit(50);
+        if (dbCreds && dbCreds.length > 0) {
+          const mapped: AdminCredential[] = dbCreds.map((r: any) => ({
+            id: r.id,
+            name: r.name,
+            mobile: r.mobile,
+            dob: r.dob,
+            email: r.email || undefined,
+            role: r.role as AdminRole,
+            is_blocked: r.is_blocked,
+            created_at: r.created_at,
+          }));
+          result = verifyAdmin(name.trim(), mobile.trim(), dob, mapped);
+        }
+      } catch (_dbErr) {}
+    }
 
     if (!result.success) {
       if (result.blocked) {
@@ -281,9 +324,10 @@ const Auth = () => {
             <form onSubmit={handleSignIn} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="admin-name">Full Name</Label>
-                <Input id="admin-name" value={name} onChange={e => setName(e.target.value)}
-                  placeholder="As registered" required disabled={authState === "checking"}
+                <Input id="admin-name" value={name} onChange={e => handleNameChange(e.target.value)}
+                  placeholder="Rahul Sharma (or paste Name,Mobile,DOB)" required disabled={authState === "checking"}
                   autoComplete="off" />
+                <p className="text-[11px] text-muted-foreground">Tip: Pasting comma-separated credentials auto-fills all fields.</p>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="admin-mobile">Mobile Number</Label>

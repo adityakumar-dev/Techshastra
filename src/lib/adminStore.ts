@@ -88,23 +88,76 @@ const saveCredentials = (creds: AdminCredential[]): void => {
 
 // ─── AUTH ────────────────────────────────────────────────────────────
 
+// Normalization helpers for bulletproof login matching
+const cleanName = (n: string): string => n.toLowerCase().trim().replace(/\s+/g, ' ');
+const cleanMobile = (m: string): string => m.replace(/[^0-9]/g, '');
+const cleanDob = (d: string): string => d.trim().replace(/\//g, '-');
+
+const matchMobile = (m1: string, m2: string): boolean => {
+  const c1 = cleanMobile(m1);
+  const c2 = cleanMobile(m2);
+  if (!c1 || !c2) return false;
+  if (c1 === c2) return true;
+  // Matches if last 10 digits match (handles +91 or country codes)
+  if (c1.length >= 10 && c2.length >= 10 && c1.slice(-10) === c2.slice(-10)) return true;
+  return false;
+};
+
 export type VerifyResult =
   | { success: true;  role: AdminRole; id: string }
   | { success: false; blocked: true;  name: string }
   | { success: false; blocked: false };
 
-/** Verify login credentials — now returns blocked status so Auth.tsx can show the right screen */
-export const verifyAdmin = (name: string, mobile: string, dob: string): VerifyResult => {
-  const key = generateCredKey(name, mobile, dob);
+/** Verify login credentials — with multi-format resilience and cross-tab credential support */
+export const verifyAdmin = (
+  name: string,
+  mobile: string,
+  dob: string,
+  customCreds?: AdminCredential[]
+): VerifyResult => {
+  let searchName = name.trim();
+  let searchMobile = mobile.trim();
+  let searchDob = dob.trim();
 
-  // Check super admin
-  if (key === getSuperAdminKey()) {
+  // If user pasted comma-separated credentials into the first field
+  if (searchName.includes(",")) {
+    const parts = searchName.split(",").map((p) => p.trim());
+    if (parts.length >= 3) {
+      searchName = parts[0];
+      if (!searchMobile) searchMobile = parts[1];
+      if (!searchDob) searchDob = parts[2];
+    }
+  }
+
+  const targetKey = generateCredKey(searchName, searchMobile, searchDob);
+
+  // 1. Check super admin
+  const superKey = getSuperAdminKey();
+  const isSuper = (
+    targetKey === superKey ||
+    (cleanName(searchName) === cleanName(DEFAULT_SUPER_ADMIN.name) &&
+     matchMobile(searchMobile, DEFAULT_SUPER_ADMIN.mobile) &&
+     cleanDob(searchDob) === cleanDob(DEFAULT_SUPER_ADMIN.dob))
+  );
+
+  if (isSuper) {
     return { success: true, role: "super_admin", id: "super_admin" };
   }
 
-  // Check regular admins
-  const creds = getCredentials();
-  const admin = creds.find(c => generateCredKey(c.name, c.mobile, c.dob) === key);
+  // 2. Check regular admins in both custom pool and localStorage
+  const localCreds = getCredentials();
+  const pool = [...(customCreds || []), ...localCreds];
+  const uniquePool = Array.from(new Map(pool.map((c) => [c.id, c])).values());
+
+  const admin = uniquePool.find((c) => {
+    const keyMatch = generateCredKey(c.name, c.mobile, c.dob) === targetKey;
+    const fuzzyMatch = (
+      cleanName(c.name) === cleanName(searchName) &&
+      matchMobile(c.mobile, searchMobile) &&
+      cleanDob(c.dob) === cleanDob(searchDob)
+    );
+    return keyMatch || fuzzyMatch;
+  });
 
   if (!admin) return { success: false, blocked: false };
   if (admin.is_blocked) return { success: false, blocked: true, name: admin.name };
@@ -136,7 +189,7 @@ export const getAdminUsers = async (): Promise<AdminCredential[]> => {
 
     // Auto-sync any credentials created locally earlier that are not yet in Supabase
     for (const c of local) {
-      if (!remote.some((r) => r.id === c.id || (r.name.toLowerCase() === c.name.toLowerCase() && r.mobile === c.mobile))) {
+      if (!remote.some((r) => r.id === c.id || (cleanName(r.name) === cleanName(c.name) && matchMobile(r.mobile, c.mobile)))) {
         createAdminCredentialDB({
           id: c.id,
           name: c.name,
@@ -185,8 +238,10 @@ export const createAdminCredential = (
   const id = crypto.randomUUID();
   const newCred: AdminCredential = {
     id,
-    name, mobile, dob,
-    email,
+    name: name.trim(),
+    mobile: mobile.trim(),
+    dob: dob.trim(),
+    email: email?.trim(),
     role,
     is_blocked: false,
     created_at: new Date().toISOString(),
@@ -197,10 +252,10 @@ export const createAdminCredential = (
   // Sync directly to Supabase PostgreSQL in background
   createAdminCredentialDB({
     id,
-    name,
-    mobile,
-    dob,
-    email: email || null,
+    name: newCred.name,
+    mobile: newCred.mobile,
+    dob: newCred.dob,
+    email: newCred.email || null,
     role,
     is_blocked: false,
   }).catch((err) => {

@@ -169,6 +169,8 @@ export interface RegisterStudentInput {
   skills?: string[];
 }
 
+import { getAllStudents as getLocalStudents } from '../studentStore';
+
 export const registerStudentProfile = async (
   input: RegisterStudentInput
 ): Promise<FullStudentProfile | null> => {
@@ -177,7 +179,33 @@ export const registerStudentProfile = async (
     return null;
   }
 
-  // 1. Sign up user with Supabase Auth
+  const rawUsername = input.githubUsername.trim();
+  const lowerUsername = rawUsername.toLowerCase();
+
+  // PRE-CHECK 1: Check if GitHub username is already registered in student_profiles
+  try {
+    const { data: existingUser } = await supabase
+      .from('student_profiles')
+      .select('id, username, github_username')
+      .or(`username.eq.${lowerUsername},github_username.ilike.${rawUsername}`)
+      .maybeSingle();
+
+    if (existingUser) {
+      throw new Error('USERNAME_EXISTS');
+    }
+  } catch (err: any) {
+    if (err?.message === 'USERNAME_EXISTS') throw err;
+  }
+
+  // PRE-CHECK 2: Check local student store
+  try {
+    const localStudents = getLocalStudents();
+    if (localStudents.some((s) => s.githubUsername?.trim().toLowerCase() === lowerUsername)) {
+      throw new Error('USERNAME_EXISTS');
+    }
+  } catch (_e) {}
+
+  // 1. Sign up user with Supabase Auth (ONLY after username is verified available)
   const { data: authData, error: authError } = await supabase.auth.signUp({
     email: input.email.trim().toLowerCase(),
     password: input.password,
@@ -185,8 +213,8 @@ export const registerStudentProfile = async (
       data: {
         full_name: input.name.trim(),
         role: 'student_member',
-        github_username: input.githubUsername.trim(),
-        avatar_url: `https://github.com/${input.githubUsername.trim()}.png`,
+        github_username: rawUsername,
+        avatar_url: `https://github.com/${rawUsername}.png`,
       },
       emailRedirectTo: typeof window !== 'undefined' ? window.location.origin : undefined,
     },
@@ -206,7 +234,7 @@ export const registerStudentProfile = async (
   }
 
   const userId = authData.user.id;
-  const username = input.githubUsername.trim().toLowerCase();
+  const username = lowerUsername;
 
   // 2. Insert into student_profiles table
   const { data: studentRecord, error: studentError } = await supabase
@@ -214,7 +242,7 @@ export const registerStudentProfile = async (
     .insert({
       user_id: userId,
       username: username,
-      github_username: input.githubUsername.trim(),
+      github_username: rawUsername,
       roll_number: input.rollNumber?.trim() || null,
       course: input.course?.trim() || null,
       year: input.year?.trim() || null,
@@ -242,7 +270,7 @@ export const registerStudentProfile = async (
       email: input.email.trim().toLowerCase(),
       full_name: input.name.trim(),
       role: 'student_member',
-      avatar_url: `https://github.com/${input.githubUsername.trim()}.png`,
+      avatar_url: `https://github.com/${rawUsername}.png`,
     }, { onConflict: 'id' });
   } catch (_profileErr) {}
 
@@ -250,7 +278,7 @@ export const registerStudentProfile = async (
     ...studentRecord,
     name: input.name.trim(),
     email: input.email.trim().toLowerCase(),
-    githubUsername: input.githubUsername.trim(),
+    githubUsername: rawUsername,
     education: [],
     experience: [],
     certifications: [],
@@ -269,7 +297,49 @@ export const signInStudentRemote = async (email: string, password: string) => {
     return null;
   }
 
-  const student = await getStudentByUserId(data.user.id);
+  let student = await getStudentByUserId(data.user.id);
+
+  // Self-heal: If auth user exists but student_profiles was missing (e.g. earlier failed signup)
+  if (!student && data.user) {
+    try {
+      const meta = data.user.user_metadata || {};
+      const baseUsername = (meta.github_username || data.user.email?.split('@')[0] || `user_${data.user.id.slice(0, 6)}`)
+        .trim()
+        .toLowerCase();
+
+      // Check if username is free, or make unique
+      let safeUsername = baseUsername;
+      const { data: existing } = await supabase
+        .from('student_profiles')
+        .select('id')
+        .eq('username', safeUsername)
+        .maybeSingle();
+
+      if (existing) {
+        safeUsername = `${baseUsername}_${data.user.id.slice(0, 4)}`;
+      }
+
+      const { data: newProfile } = await supabase
+        .from('student_profiles')
+        .insert({
+          user_id: data.user.id,
+          username: safeUsername,
+          github_username: meta.github_username || safeUsername,
+          is_active: true,
+          interests: [],
+          skills: [],
+        })
+        .select()
+        .maybeSingle();
+
+      if (newProfile) {
+        student = await getStudentByUserId(data.user.id);
+      }
+    } catch (_healErr) {
+      console.warn("Self-healing profile creation warning:", _healErr);
+    }
+  }
+
   return {
     user: data.user,
     student,
