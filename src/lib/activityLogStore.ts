@@ -7,7 +7,9 @@ export type LogEntryType =
     | "delete_credential"
     | "block_credential"
     | "unblock_credential"
-    | "toggle_page";
+    | "toggle_page"
+    | "approve_admin_login"
+    | "reject_admin_login";
 
 export interface LogEntry {
     id: string;

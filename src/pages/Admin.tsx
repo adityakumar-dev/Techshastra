@@ -18,7 +18,7 @@ import Navbar from "@/components/Navbar";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { LayoutDashboard, FileText, Calendar, Image, Trophy, HelpCircle, MessageSquare, Users, Plus, Trash2, Github, Globe, Terminal, Loader2, Award, Newspaper, Eye, EyeOff, Book, ShieldCheck, LogOut, Ban, UserCheck, UserX, ToggleLeft, ToggleRight, UserPlus, Phone, CalendarDays, Copy, Key, Mail, RotateCcw, ClipboardList, X, Instagram, Linkedin, Twitter, Facebook, Link, Hash, Upload, Download } from "lucide-react";
+import { LayoutDashboard, FileText, Calendar, Image, Trophy, HelpCircle, MessageSquare, Users, Plus, Trash2, Github, Globe, Terminal, Loader2, Award, Newspaper, Eye, EyeOff, Book, ShieldCheck, LogOut, Ban, UserCheck, UserX, ToggleLeft, ToggleRight, UserPlus, Phone, CalendarDays, Copy, Key, Mail, RotateCcw, ClipboardList, X, Check, ShieldAlert, CheckCircle2, Instagram, Linkedin, Twitter, Facebook, Link, Hash, Upload, Download } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -26,7 +26,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/components/ui/use-toast";
 import { parseGitHubUrl } from "@/lib/projectStore";
 import { generateSlug } from "@/lib/blogStore";
-import { getAdminUsers, blockAdmin, unblockAdmin, getAllPageVisibility, togglePageVisibility, createAdminCredential, getStoredCredentials, deleteAdminCredential, setSuperAdminCredentials, isSuperAdminDefault, type AdminCredential, type PageVisibility, type AdminRole } from "@/lib/adminStore";
+import { getAdminUsers, blockAdmin, unblockAdmin, getAllPageVisibility, togglePageVisibility, createAdminCredential, getStoredCredentials, deleteAdminCredential, setSuperAdminCredentials, isSuperAdminDefault, type AdminCredential, type PageVisibility, type AdminRole, subscribeToAdminLoginRequests, approveAdminLoginRequest, rejectAdminLoginRequest, type AdminLoginRequest } from "@/lib/adminStore";
 import { addLogEntry, clearLog, getLogEntries, revertEntry, saveCredentialsRaw, type LogEntry } from "@/lib/activityLogStore";
 import { useAdminPresence } from "@/hooks/use-admin-presence";
 import { Badge } from "@/components/ui/badge";
@@ -294,6 +294,42 @@ const Admin = ({ userRole }: AdminProps) => {
     currentUserName,
     activeTab
   );
+
+  // ── Admin Login Approvals (Super Admin Only) ──────────────────────────────
+  const [pendingRequests, setPendingRequests] = useState<AdminLoginRequest[]>([]);
+  const [allRequests, setAllRequests] = useState<AdminLoginRequest[]>([]);
+
+  useEffect(() => {
+    if (!isSuperAdmin) return;
+    const unsubscribe = subscribeToAdminLoginRequests((reqs) => {
+      setAllRequests(reqs);
+      setPendingRequests(reqs.filter((r) => r.status === "pending"));
+    });
+    return () => unsubscribe();
+  }, [isSuperAdmin]);
+
+  const handleApproveAdminLogin = (requestId: string) => {
+    const updated = approveAdminLoginRequest(requestId, currentUserName);
+    if (updated) {
+      toast({
+        title: "Access Confirmed ✓",
+        description: `Approved login for ${updated.adminName}.`,
+      });
+      trackAction(`Approved admin login: ${updated.adminName}`);
+    }
+  };
+
+  const handleRejectAdminLogin = (requestId: string) => {
+    const updated = rejectAdminLoginRequest(requestId, currentUserName);
+    if (updated) {
+      toast({
+        title: "Access Rejected",
+        description: `Rejected login for ${updated.adminName}.`,
+        variant: "destructive",
+      });
+      trackAction(`Rejected admin login: ${updated.adminName}`);
+    }
+  };
 
   // ── Projects state ──────────────────────────────────────────────────────────
   const [projects, setProjects] = useState<Project[]>([]);
@@ -1163,6 +1199,64 @@ const Admin = ({ userRole }: AdminProps) => {
           </Button>
         </div>
 
+        {/* ── Top Floating Pending Requests Banner for Super Admin ── */}
+        {isSuperAdmin && pendingRequests.length > 0 && (
+          <div className="mb-6 p-4 rounded-xl border border-amber-500/40 bg-amber-500/10 shadow-lg backdrop-blur animate-in fade-in slide-in-from-top-3 duration-300">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="flex items-start sm:items-center gap-3">
+                <div className="relative flex h-3.5 w-3.5 mt-1 sm:mt-0">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-amber-500"></span>
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-semibold text-sm sm:text-base">Admin Login Confirmation Required</h3>
+                    <Badge variant="outline" className="text-amber-600 border-amber-500/50 bg-amber-500/10 text-[11px]">
+                      {pendingRequests.length} pending
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-0.5">
+                    An admin has entered valid credentials and is waiting for your authorization to access the panel.
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {pendingRequests.slice(0, 2).map((req) => (
+                  <div key={req.id} className="flex items-center gap-2 bg-background/90 p-1.5 px-3 rounded-lg border border-amber-500/30 text-xs shadow-sm">
+                    <span className="font-medium text-foreground">{req.adminName}</span>
+                    <span className="text-[10px] text-muted-foreground hidden lg:inline">({req.device})</span>
+                    <Button
+                      size="sm"
+                      className="h-7 px-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs gap-1"
+                      onClick={() => handleApproveAdminLogin(req.id)}
+                    >
+                      <Check className="w-3.5 h-3.5" /> Approve
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="destructive"
+                      className="h-7 px-2.5 text-xs gap-1"
+                      onClick={() => handleRejectAdminLogin(req.id)}
+                    >
+                      <X className="w-3.5 h-3.5" /> Reject
+                    </Button>
+                  </div>
+                ))}
+                {pendingRequests.length > 2 && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="text-xs text-amber-600 hover:text-amber-700"
+                    onClick={() => setActiveTab("super-admin")}
+                  >
+                    View all ({pendingRequests.length})
+                  </Button>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         <Tabs defaultValue="overview" className="space-y-6" onValueChange={setActiveTab}>
           <TabsList className="flex flex-wrap w-full h-auto bg-muted/50 p-1 gap-1">
             <TabsTrigger value="overview"><LayoutDashboard className="w-4 h-4 mr-2" />Overview</TabsTrigger>
@@ -1178,8 +1272,13 @@ const Admin = ({ userRole }: AdminProps) => {
             <TabsTrigger value="certificates"><Award className="w-4 h-4 mr-2 hidden sm:inline" />Certs</TabsTrigger>
             <TabsTrigger value="students"><Users className="w-4 h-4 mr-2 hidden sm:inline" />Students</TabsTrigger>
             {isSuperAdmin && (
-              <TabsTrigger value="super-admin" className="bg-primary/10 text-primary">
+              <TabsTrigger value="super-admin" className="bg-primary/10 text-primary relative">
                 <ShieldCheck className="w-4 h-4 mr-2" />Super Admin
+                {pendingRequests.length > 0 && (
+                  <span className="ml-1.5 px-1.5 py-0.2 text-[10px] rounded-full bg-amber-500 text-white font-semibold">
+                    {pendingRequests.length}
+                  </span>
+                )}
               </TabsTrigger>
             )}
           </TabsList>
@@ -2408,6 +2507,122 @@ const Admin = ({ userRole }: AdminProps) => {
               <div className="space-y-8">
                 {/* ── Change Super Admin Credentials ── */}
                 <ChangeSuperAdminCard actor={currentUserName} onChanged={() => toast({ title: "Super admin credentials updated ✓" })} />
+
+                {/* ── Admin Login Access Requests & Confirmations ── */}
+                <Card className="border-amber-500/30">
+                  <CardHeader>
+                    <div className="flex items-center justify-between">
+                      <CardTitle className="flex items-center gap-2">
+                        <ShieldAlert className="w-5 h-5 text-amber-500" />
+                        Admin Access Requests & Confirmations
+                      </CardTitle>
+                      {pendingRequests.length > 0 ? (
+                        <Badge className="bg-amber-500 text-white font-medium">
+                          {pendingRequests.length} Pending Approval
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-muted-foreground text-xs">
+                          All Caught Up
+                        </Badge>
+                      )}
+                    </div>
+                    <CardDescription>
+                      When an admin signs in with their credentials, access to the admin dashboard is held until you confirm or reject the login request.
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent className="space-y-6">
+                    {/* Active pending requests */}
+                    {pendingRequests.length > 0 ? (
+                      <div className="space-y-3">
+                        <h4 className="text-xs font-semibold uppercase tracking-wider text-amber-600">
+                          Pending Approvals ({pendingRequests.length})
+                        </h4>
+                        <div className="divide-y divide-border rounded-lg border border-amber-500/30 bg-amber-500/5 overflow-hidden">
+                          {pendingRequests.map((req) => (
+                            <div key={req.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-semibold text-sm">{req.adminName}</span>
+                                  <Badge variant="outline" className="text-[10px] bg-amber-500/10 text-amber-600 border-amber-500/30 font-medium">
+                                    Admin
+                                  </Badge>
+                                  <span className="text-[10px] text-muted-foreground font-mono">
+                                    ID: {req.id.slice(-8).toUpperCase()}
+                                  </span>
+                                </div>
+                                <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                                  <span>📱 {req.mobile}</span>
+                                  <span>💻 {req.device}</span>
+                                  <span>🕒 {new Date(req.requestedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</span>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <Button
+                                  size="sm"
+                                  className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5"
+                                  onClick={() => handleApproveAdminLogin(req.id)}
+                                >
+                                  <Check className="w-4 h-4" /> Approve & Grant Access
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="destructive"
+                                  className="gap-1.5"
+                                  onClick={() => handleRejectAdminLogin(req.id)}
+                                >
+                                  <X className="w-4 h-4" /> Reject
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="p-6 text-center rounded-lg border border-dashed border-border/80 bg-muted/20">
+                        <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto mb-2 opacity-80" />
+                        <p className="font-medium text-sm">No Pending Login Requests</p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          When an admin attempts to log in, their confirmation request will appear here with instant Approve/Reject controls.
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Recent Request History */}
+                    {allRequests.filter(r => r.status !== 'pending').length > 0 && (
+                      <div className="space-y-2 pt-2 border-t border-border">
+                        <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                          Recent Login Requests History
+                        </h4>
+                        <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                          {allRequests.filter(r => r.status !== 'pending').slice(0, 10).map((req) => (
+                            <div key={req.id} className="p-2.5 rounded-md border border-border/60 bg-muted/30 flex items-center justify-between text-xs">
+                              <div className="flex items-center gap-2">
+                                {req.status === 'approved' ? (
+                                  <Badge variant="outline" className="text-emerald-600 border-emerald-500/40 bg-emerald-500/10 text-[10px]">
+                                    Approved
+                                  </Badge>
+                                ) : req.status === 'rejected' ? (
+                                  <Badge variant="outline" className="text-destructive border-destructive/40 bg-destructive/10 text-[10px]">
+                                    Rejected
+                                  </Badge>
+                                ) : (
+                                  <Badge variant="outline" className="text-muted-foreground text-[10px]">
+                                    {req.status}
+                                  </Badge>
+                                )}
+                                <span className="font-medium">{req.adminName}</span>
+                                <span className="text-[11px] text-muted-foreground hidden sm:inline">({req.device})</span>
+                              </div>
+                              <span className="text-[10px] text-muted-foreground">
+                                {req.respondedAt ? new Date(req.respondedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : new Date(req.requestedAt).toLocaleTimeString()}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
 
                 {/* ── Create Admin Credentials ── */}
                 <Card className="border-green-500/20">

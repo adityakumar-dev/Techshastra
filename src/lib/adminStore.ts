@@ -323,3 +323,5 @@ export const initializePages = (): void => {
 };
 
 initializePages();
+
+export * from './adminApprovalStore';
