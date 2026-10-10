@@ -1,0 +1,203 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 
+  Design System: Luxury Glassmorphism with Soft Minimalism (Alpine / Hospitality UI)
+  
+  Color Palette:
+  - Soft lilac background: #C9BDE6 → hsl(262 40% 82%)
+  - Pastel lavender overlay: #B7ACE2 → hsl(252 44% 78%)
+  - Icy off-white panels: #F4F2F8 → hsl(258 30% 96%)
+  - Deep wine/burgundy accent: #2A0F14 → hsl(348 48% 11%)
+  - Glass border: rgba(255,255,255,0.35)
+  
+  Typography: Inter 300-500 (body), Sora light (headings), Plus Jakarta Sans (luxury alt)
+  All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    --background: 262 40% 82%;
+    --foreground: 348 48% 11%;
+
+    --card: 258 30% 96%;
+    --card-foreground: 348 48% 11%;
+
+    --popover: 258 30% 96%;
+    --popover-foreground: 348 48% 11%;
+
+    --primary: 348 48% 11%;
+    --primary-foreground: 258 30% 96%;
+
+    --secondary: 252 44% 78%;
+    --secondary-foreground: 348 48% 11%;
+
+    --muted: 258 25% 90%;
+    --muted-foreground: 348 30% 30%;
+
+    --accent: 262 35% 72%;
+    --accent-foreground: 348 48% 11%;
+
+    --destructive: 0 60% 50%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 0 0% 100% / 0.35;
+    --input: 258 25% 90%;
+    --ring: 348 48% 11%;
+
+    --radius: 1.25rem;
+
+    --glass-bg: 258 30% 96% / 0.45;
+    --glass-border: 0 0% 100% / 0.35;
+    --glass-blur: 12px;
+    --glass-shadow: 0 8px 32px hsl(262 40% 50% / 0.12);
+
+    --gradient-soft: linear-gradient(135deg, hsl(262 40% 82%) 0%, hsl(252 44% 78%) 50%, hsl(258 30% 88%) 100%);
+    --gradient-wine: linear-gradient(135deg, hsl(348 48% 11%) 0%, hsl(348 40% 20%) 100%);
+    --gradient-glass: linear-gradient(135deg, hsl(0 0% 100% / 0.4) 0%, hsl(0 0% 100% / 0.15) 100%);
+
+    --shadow-glass: 0 8px 32px hsl(262 40% 50% / 0.15);
+    --shadow-elevated: 0 20px 60px hsl(262 40% 40% / 0.18);
+
+    --sidebar-background: 258 30% 96%;
+    --sidebar-foreground: 348 48% 11%;
+    --sidebar-primary: 348 48% 11%;
+    --sidebar-primary-foreground: 258 30% 96%;
+    --sidebar-accent: 258 25% 90%;
+    --sidebar-accent-foreground: 348 48% 11%;
+    --sidebar-border: 0 0% 100% / 0.35;
+    --sidebar-ring: 348 48% 11%;
+  }
+
+  .dark {
+    --background: 262 30% 12%;
+    --foreground: 258 30% 92%;
+
+    --card: 262 25% 16%;
+    --card-foreground: 258 30% 92%;
+
+    --popover: 262 25% 16%;
+    --popover-foreground: 258 30% 92%;
+
+    --primary: 262 40% 78%;
+    --primary-foreground: 262 30% 12%;
+
+    --secondary: 252 30% 28%;
+    --secondary-foreground: 258 30% 92%;
+
+    --muted: 262 20% 22%;
+    --muted-foreground: 258 20% 65%;
+
+    --accent: 262 35% 60%;
+    --accent-foreground: 258 30% 92%;
+
+    --destructive: 0 62% 50%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 0 0% 100% / 0.12;
+    --input: 262 20% 22%;
+    --ring: 262 40% 78%;
+
+    --glass-bg: 262 25% 18% / 0.6;
+    --glass-border: 0 0% 100% / 0.12;
+    --glass-blur: 16px;
+    --glass-shadow: 0 8px 32px hsl(262 30% 8% / 0.4);
+
+    --gradient-soft: linear-gradient(135deg, hsl(262 30% 12%) 0%, hsl(252 25% 16%) 50%, hsl(258 20% 14%) 100%);
+    --gradient-wine: linear-gradient(135deg, hsl(262 40% 78%) 0%, hsl(262 35% 65%) 100%);
+    --gradient-glass: linear-gradient(135deg, hsl(0 0% 100% / 0.08) 0%, hsl(0 0% 100% / 0.02) 100%);
+
+    --shadow-glass: 0 8px 32px hsl(262 30% 8% / 0.4);
+    --shadow-elevated: 0 20px 60px hsl(262 30% 5% / 0.5);
+
+    --sidebar-background: 262 25% 14%;
+    --sidebar-foreground: 258 30% 92%;
+    --sidebar-primary: 262 40% 78%;
+    --sidebar-primary-foreground: 262 30% 12%;
+    --sidebar-accent: 262 20% 22%;
+    --sidebar-accent-foreground: 258 30% 92%;
+    --sidebar-border: 0 0% 100% / 0.12;
+    --sidebar-ring: 262 40% 78%;
+  }
+}
+
+@layer utilities {
+  .text-gradient-neon {
+    @apply bg-clip-text text-transparent;
+    background-image: var(--gradient-wine);
+  }
+
+  .dark .text-gradient-neon {
+    background-image: var(--gradient-wine);
+  }
+
+  .glass {
+    background: hsl(var(--glass-bg));
+    backdrop-filter: blur(var(--glass-blur));
+    -webkit-backdrop-filter: blur(var(--glass-blur));
+    border: 1px solid hsl(var(--glass-border));
+    box-shadow: var(--shadow-glass);
+  }
+
+  .glass-elevated {
+    background: hsl(var(--glass-bg));
+    backdrop-filter: blur(calc(var(--glass-blur) * 1.5));
+    -webkit-backdrop-filter: blur(calc(var(--glass-blur) * 1.5));
+    border: 1px solid hsl(var(--glass-border));
+    box-shadow: var(--shadow-elevated);
+  }
+
+  .btn-pill {
+    @apply rounded-full px-8 py-3 font-light tracking-wide transition-all duration-300;
+    border: 1px solid hsl(var(--glass-border));
+  }
+
+  .animate-float {
+    animation: float 8s ease-in-out infinite;
+  }
+
+  @keyframes float {
+    0%, 100% {
+      transform: translateY(0px);
+    }
+    50% {
+      transform: translateY(-16px);
+    }
+  }
+
+  @keyframes soft-pulse {
+    0%, 100% {
+      opacity: 0.6;
+    }
+    50% {
+      opacity: 0.9;
+    }
+  }
+  
+  .animate-soft-pulse {
+    animation: soft-pulse 4s ease-in-out infinite;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-weight: 300;
+    letter-spacing: 0.01em;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Sora', 'Inter', sans-serif;
+    font-weight: 300;
+    letter-spacing: 0.04em;
+  }
+}

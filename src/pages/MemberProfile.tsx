@@ -1,0 +1,775 @@
+/**
+ * /members/:username — Student profile page.
+ *
+ * Enhancements over v1:
+ *   • GitHub contribution heatmap via ghchart.rshah.org (free SVG embed)
+ *   • Top repos sorted by stars → forks → recency (not just push date)
+ *   • Recharts PieChart donut for language breakdown
+ *   • Shareable link copy button
+ *   • GitHub account age ("on GitHub since YYYY")
+ *   • All GitHub data cached 30 min (no hammering the API)
+ *   • Edit → navigates to /members/:username/edit (full CRUD page)
+ */
+
+import { useEffect, useState, useCallback, useRef } from "react";
+import { useParams, useNavigate, Link } from "react-router-dom";
+import { motion } from "framer-motion";
+import {
+  PieChart, Pie, Cell, Tooltip as RechartTooltip, ResponsiveContainer, Legend,
+} from "recharts";
+import Navbar from "@/components/Navbar";
+import Footer from "@/components/Footer";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import {
+  Github, Linkedin, MapPin, Building2, Globe, Star, GitFork,
+  ExternalLink, FileText, Printer, Loader2, AlertTriangle,
+  GraduationCap, Briefcase, Award, Code2, BookOpen, Edit3,
+  LogOut, ChevronRight, Copy, Check, Calendar, Users, RefreshCw, Eye, Plus,
+} from "lucide-react";
+import {
+  getStudentByGithub, updateStudent,
+  type StudentProfile, type EducationEntry,
+  type ExperienceEntry, type CertificationEntry,
+} from "@/lib/studentStore";
+import { getStudentByUsername } from "@/lib/services/studentService";
+import {
+  fetchGHUser, fetchGHRepos, aggregateLanguages,
+  langPercents, langColor, topRepos, clearGHCache,
+  type GHUser, type GHRepo, type GHLanguageMap,
+} from "@/lib/githubApi";
+import { downloadLatex } from "@/lib/resumeExport";
+import { openResumePrintWindow, previewResume } from "@/components/ResumeDocument";
+import { useStudentAuth } from "@/hooks/useStudentAuth";
+import ContributionGraph from "@/components/ContributionGraph";
+import { buildAutoProfile, profileNeedsAutoFill } from "@/lib/autoProfile";
+import { useToast } from "@/components/ui/use-toast";
+
+// ─── MOTION VARIANTS ─────────────────────────────────────────────────────────
+
+const fadeUp = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0 } };
+const stagger = { hidden: {}, show: { transition: { staggerChildren: 0.07 } } };
+
+// ─── SMALL HELPERS ────────────────────────────────────────────────────────────
+
+const StatPill = ({ label, value }: { label: string; value: number | string }) => (
+  <div className="flex flex-col items-center gap-1 px-5 py-3 glass rounded-2xl min-w-[80px]">
+    <span className="text-lg font-heading font-light text-foreground">{value}</span>
+    <span className="text-[10px] uppercase tracking-widest text-foreground/50">{label}</span>
+  </div>
+);
+
+const SectionTitle = ({ icon: Icon, title }: { icon: React.ElementType; title: string }) => (
+  <div className="flex items-center gap-3 mb-4">
+    <div className="w-8 h-8 rounded-xl bg-primary/10 flex items-center justify-center flex-shrink-0">
+      <Icon size={16} className="text-primary" />
+    </div>
+    <h2 className="text-sm font-heading uppercase tracking-[0.2em] text-foreground/70">{title}</h2>
+  </div>
+);
+
+/** Empty section placeholder shown only on own profile */
+const EmptyCTA = ({
+  icon: Icon, label, editUrl, hint,
+}: { icon: React.ElementType; label: string; editUrl: string; hint: string }) => (
+  <Link to={editUrl}>
+    <div className="flex items-center gap-4 p-5 glass rounded-2xl hover:bg-primary/5 transition-all group cursor-pointer border border-dashed border-foreground/15 hover:border-primary/30">
+      <div className="w-9 h-9 rounded-xl bg-foreground/5 group-hover:bg-primary/10 flex items-center justify-center transition-colors flex-shrink-0">
+        <Icon size={16} className="text-foreground/30 group-hover:text-primary transition-colors" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-light text-foreground/60 group-hover:text-foreground transition-colors">
+          Add {label}
+        </p>
+        <p className="text-xs text-foreground/30 font-light">{hint}</p>
+      </div>
+      <Plus size={14} className="text-foreground/25 group-hover:text-primary transition-colors flex-shrink-0" />
+    </div>
+  </Link>
+);
+
+/** Recharts donut for language breakdown */
+const LangDonut = ({ langs }: { langs: { lang: string; pct: number }[] }) => {
+  const top = langs.slice(0, 7);
+  const otherPct = Math.max(0, 100 - top.reduce((s, l) => s + l.pct, 0));
+  const data = [
+    ...top.map((l) => ({ name: l.lang, value: l.pct, color: langColor(l.lang) })),
+    ...(otherPct > 0.5 ? [{ name: "Other", value: otherPct, color: "#8b8b8b" }] : []),
+  ];
+
+  return (
+    <div className="space-y-4">
+      <ResponsiveContainer width="100%" height={200}>
+        <PieChart>
+          <Pie
+            data={data}
+            cx="50%"
+            cy="50%"
+            innerRadius={55}
+            outerRadius={85}
+            paddingAngle={2}
+            dataKey="value"
+            strokeWidth={0}
+          >
+            {data.map((entry, i) => (
+              <Cell key={i} fill={entry.color} />
+            ))}
+          </Pie>
+          <RechartTooltip
+            formatter={(value: number) => [`${value}%`, "Usage"]}
+            contentStyle={{
+              background: "hsl(var(--card))",
+              border: "none",
+              borderRadius: "12px",
+              fontSize: "12px",
+              color: "hsl(var(--foreground))",
+            }}
+          />
+        </PieChart>
+      </ResponsiveContainer>
+      {/* Legend */}
+      <div className="space-y-1.5">
+        {data.map(({ name, value, color }) => (
+          <div key={name} className="flex items-center justify-between text-xs font-light text-foreground/70">
+            <span className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: color }} />
+              {name}
+            </span>
+            <span className="text-foreground/50">{value}%</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+const RepoCard = ({ repo }: { repo: GHRepo }) => (
+  <motion.a
+    href={repo.html_url}
+    target="_blank"
+    rel="noopener noreferrer"
+    variants={fadeUp}
+    className="block glass rounded-2xl p-5 hover:bg-primary/5 transition-all duration-300 group"
+  >
+    <div className="flex items-start justify-between gap-2">
+      <div className="space-y-1 flex-1 min-w-0">
+        <p className="font-heading font-light tracking-wide text-foreground truncate group-hover:text-primary transition-colors">
+          {repo.name}
+        </p>
+        {repo.description && (
+          <p className="text-xs text-foreground/50 font-light line-clamp-2">{repo.description}</p>
+        )}
+        {repo.topics.length > 0 && (
+          <div className="flex flex-wrap gap-1 pt-1">
+            {repo.topics.slice(0, 4).map((t) => (
+              <Badge key={t} variant="secondary" className="text-[9px] font-light px-2 py-0">{t}</Badge>
+            ))}
+          </div>
+        )}
+      </div>
+      <ExternalLink size={14} className="text-foreground/30 group-hover:text-primary flex-shrink-0 mt-1 transition-colors" />
+    </div>
+    <div className="flex items-center gap-4 mt-3 text-xs text-foreground/40">
+      {repo.language && (
+        <span className="flex items-center gap-1">
+          <span className="w-2 h-2 rounded-full" style={{ background: langColor(repo.language) }} />
+          {repo.language}
+        </span>
+      )}
+      {repo.stargazers_count > 0 && (
+        <span className="flex items-center gap-1"><Star size={11} />{repo.stargazers_count}</span>
+      )}
+      {repo.forks_count > 0 && (
+        <span className="flex items-center gap-1"><GitFork size={11} />{repo.forks_count}</span>
+      )}
+    </div>
+  </motion.a>
+);
+
+/** Copy-to-clipboard button that shows a checkmark for 2 s */
+const CopyLinkButton = ({ url }: { url: string }) => {
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+  return (
+    <button
+      onClick={copy}
+      title="Copy profile link"
+      className="flex items-center gap-1.5 text-xs text-foreground/40 hover:text-primary transition-colors"
+    >
+      {copied ? <Check size={13} className="text-green-500" /> : <Copy size={13} />}
+      <span className="font-light">{copied ? "Copied!" : "Copy link"}</span>
+    </button>
+  );
+};
+
+// ─── PAGE ─────────────────────────────────────────────────────────────────────
+
+type LoadStatus = "loading" | "error" | "not_found" | "ok";
+
+const MemberProfile = () => {
+  const { username } = useParams<{ username: string }>();
+  const navigate = useNavigate();
+  const { session, logout } = useStudentAuth();
+  const { toast } = useToast();
+
+  const [student, setStudent] = useState<StudentProfile | null>(null);
+  const [ghUser, setGhUser] = useState<GHUser | null>(null);
+  const [repos, setRepos] = useState<GHRepo[]>([]);
+  const [langMap, setLangMap] = useState<GHLanguageMap>({});
+  const [status, setStatus] = useState<LoadStatus>("loading");
+  const [repoFilter, setRepoFilter] = useState<"top" | "all" | "starred">("top");
+
+  const isOwn = session?.githubUsername?.toLowerCase() === username?.toLowerCase();
+  const profileUrl = `${window.location.origin}/members/${username}`;
+
+  const sessionRef = useRef(session);
+  sessionRef.current = session;
+  const toastRef = useRef(toast);
+  toastRef.current = toast;
+
+  const load = useCallback(async () => {
+    if (!username) { setStatus("not_found"); return; }
+    setStatus("loading");
+    try {
+      let s: any = null;
+      try {
+        const remote = await getStudentByUsername(username);
+        if (remote) {
+          s = {
+            ...remote,
+            githubUsername: remote.github_username || remote.githubUsername,
+            name: remote.name || remote.username,
+            linkedinUrl: remote.linkedin_url || (remote as any).linkedinUrl,
+            portfolioUrl: remote.portfolio_url || (remote as any).portfolioUrl,
+            education: remote.education || [],
+            experience: remote.experience || [],
+            certifications: remote.certifications || [],
+          };
+        }
+      } catch (_e) {}
+      if (!s) {
+        s = getStudentByGithub(username);
+      }
+      if (!s) { setStatus("not_found"); return; }
+      setStudent(s);
+
+      const [user, repoList] = await Promise.all([
+        fetchGHUser(username),
+        fetchGHRepos(username),
+      ]);
+      setGhUser(user);
+      setRepos(repoList);
+      aggregateLanguages(username, repoList).then((map) => {
+        setLangMap(map);
+        const isOwner = sessionRef.current?.githubUsername?.toLowerCase() === username.toLowerCase();
+        const fresh = getStudentByGithub(username);
+        if (isOwner && fresh && profileNeedsAutoFill(fresh)) {
+          const { updates, summary } = buildAutoProfile(fresh, user, repoList, map);
+          if (Object.keys(updates).length > 0) {
+            const saved = updateStudent(fresh.id, updates);
+            if (saved) {
+              setStudent(saved);
+              toastRef.current({
+                title: "Profile auto-filled from GitHub ✓",
+                description: summary.join(" · "),
+              });
+            }
+          }
+        }
+      }).catch(() => {});
+      setStatus("ok");
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "";
+      setStatus(msg === "NOT_FOUND" ? "not_found" : "error");
+    }
+  }, [username]);
+
+  useEffect(() => { load(); }, [load]);
+
+  // ── Error states ─────────────────────────────────────────────────────────
+
+  if (status === "loading") return (
+    <div className="min-h-screen flex items-center justify-center bg-background">
+      <div className="flex flex-col items-center gap-4">
+        <Loader2 className="w-10 h-10 animate-spin text-primary" />
+        <p className="text-foreground/40 text-sm font-light tracking-widest uppercase">Loading Profile</p>
+      </div>
+    </div>
+  );
+
+  if (status === "not_found") return (
+    <div className="min-h-screen bg-background">
+      <Navbar />
+      <div className="min-h-[70vh] flex flex-col items-center justify-center gap-6 text-center px-4">
+        <div className="w-20 h-20 rounded-full bg-primary/10 flex items-center justify-center">
+          <Github size={36} className="text-primary/60" />
+        </div>
+        <h1 className="text-3xl font-heading font-light tracking-widest uppercase">Profile Not Found</h1>
+        <p className="text-foreground/50 font-light">No TechShastra member with GitHub username <strong>{username}</strong></p>
+        <Button onClick={() => navigate("/join")} className="rounded-full px-8">Sign Up</Button>
+      </div>
+      <Footer />
+    </div>
+  );
+
+  if (status === "error") return (
+    <div className="min-h-screen bg-background">
+      <Navbar />
+      <div className="min-h-[70vh] flex flex-col items-center justify-center gap-4 px-4">
+        <AlertTriangle size={40} className="text-destructive" />
+        <p className="text-foreground/60 font-light">Failed to load profile. GitHub API may be rate-limited.</p>
+        <Button variant="outline" onClick={load} className="rounded-full">Try Again</Button>
+      </div>
+      <Footer />
+    </div>
+  );
+
+  if (!student) return null;
+
+  // ── Derived data ─────────────────────────────────────────────────────────
+
+  const langs = langPercents(langMap);
+  const ghSince = ghUser?.created_at
+    ? new Date(ghUser.created_at).getFullYear()
+    : null;
+
+  const displayRepos = repoFilter === "top"
+    ? topRepos(repos, 12)
+    : repoFilter === "starred"
+      ? repos.filter((r) => r.stargazers_count > 0).slice(0, 18)
+      : repos.slice(0, 18);
+
+  const totalStars = repos.reduce((s, r) => s + r.stargazers_count, 0);
+  const originalRepos = repos.filter((r) => !r.fork).length;
+
+  // ── Profile completeness ──────────────────────────────────────────────────
+  const completenessFields = [
+    { label: "Bio",              done: !!(ghUser?.bio ?? student.bio) },
+    { label: "Skills",          done: student.skills.length > 0 },
+    { label: "Education",       done: student.education.length > 0 },
+    { label: "Experience",      done: student.experience.length > 0 },
+    { label: "Certifications",  done: student.certifications.length > 0 },
+    { label: "LinkedIn",        done: !!student.linkedinUrl },
+    { label: "Portfolio",       done: !!student.portfolioUrl },
+  ];
+  const completenessScore = Math.round(
+    (completenessFields.filter((f) => f.done).length / completenessFields.length) * 100
+  );
+  const missingFields = completenessFields.filter((f) => !f.done).map((f) => f.label);
+
+  // ── Print-only resume ─────────────────────────────────────────────────────
+
+  return (
+    <div className="min-h-screen bg-background">
+      <Navbar />
+
+
+      <div className="container mx-auto px-4 py-24 max-w-6xl">
+
+        {/* ── HERO ─────────────────────────────────────────────────────── */}
+        <motion.div initial="hidden" animate="show" variants={stagger}
+          className="flex flex-col md:flex-row items-start gap-8 mb-10">
+
+          {/* Avatar */}
+          <motion.div variants={fadeUp} className="flex-shrink-0">
+            <div className="w-28 h-28 md:w-36 md:h-36 rounded-3xl overflow-hidden ring-4 ring-primary/20 shadow-2xl">
+              {ghUser?.avatar_url
+                ? <img src={ghUser.avatar_url} alt={student.name} className="w-full h-full object-cover" />
+                : <div className="w-full h-full bg-primary/10 flex items-center justify-center">
+                    <span className="text-4xl font-heading text-primary">{student.name[0].toUpperCase()}</span>
+                  </div>
+              }
+            </div>
+          </motion.div>
+
+          {/* Info */}
+          <div className="flex-1 min-w-0 space-y-3">
+            <motion.div variants={fadeUp}>
+              <h1 className="text-3xl md:text-5xl font-heading font-light tracking-tight text-foreground">
+                {ghUser?.name ?? student.name}
+              </h1>
+              <div className="flex items-center gap-3 mt-1 flex-wrap">
+                <p className="text-foreground/50 font-light">@{student.githubUsername}</p>
+                <CopyLinkButton url={profileUrl} />
+              </div>
+            </motion.div>
+
+            {(ghUser?.bio ?? student.bio) && (
+              <motion.p variants={fadeUp} className="text-foreground/70 font-light max-w-2xl italic">
+                {ghUser?.bio ?? student.bio}
+              </motion.p>
+            )}
+
+            {/* Meta row */}
+            <motion.div variants={fadeUp} className="flex flex-wrap gap-4 text-xs text-foreground/50 font-light">
+              {ghUser?.location && <span className="flex items-center gap-1"><MapPin size={12} />{ghUser.location}</span>}
+              {ghUser?.company && <span className="flex items-center gap-1"><Building2 size={12} />{ghUser.company}</span>}
+              {student.course && (
+                <span className="flex items-center gap-1">
+                  <GraduationCap size={12} />{student.course}{student.year ? `, ${student.year}` : ""}
+                </span>
+              )}
+              {ghSince && (
+                <span className="flex items-center gap-1"><Calendar size={12} />On GitHub since {ghSince}</span>
+              )}
+              {ghUser?.blog && (
+                <a href={ghUser.blog} target="_blank" rel="noopener noreferrer"
+                  className="flex items-center gap-1 hover:text-primary transition-colors">
+                  <Globe size={12} />{ghUser.blog.replace(/^https?:\/\//, "")}
+                </a>
+              )}
+            </motion.div>
+
+            {/* Social badges */}
+            <motion.div variants={fadeUp} className="flex flex-wrap gap-2">
+              <a href={`https://github.com/${student.githubUsername}`} target="_blank" rel="noopener noreferrer">
+                <Badge variant="secondary" className="gap-1.5 px-3 py-1.5 text-xs font-light hover:bg-primary hover:text-primary-foreground transition-all cursor-pointer">
+                  <Github size={12} /> GitHub
+                </Badge>
+              </a>
+              {student.linkedinUrl && (
+                <a href={student.linkedinUrl} target="_blank" rel="noopener noreferrer">
+                  <Badge variant="secondary" className="gap-1.5 px-3 py-1.5 text-xs font-light hover:bg-[#0077b5] hover:text-white transition-all cursor-pointer">
+                    <Linkedin size={12} /> LinkedIn
+                  </Badge>
+                </a>
+              )}
+              {student.portfolioUrl && (
+                <a href={student.portfolioUrl} target="_blank" rel="noopener noreferrer">
+                  <Badge variant="secondary" className="gap-1.5 px-3 py-1.5 text-xs font-light hover:bg-primary hover:text-primary-foreground transition-all cursor-pointer">
+                    <Globe size={12} /> Portfolio
+                  </Badge>
+                </a>
+              )}
+            </motion.div>
+          </div>
+
+          {/* Actions */}
+          <motion.div variants={fadeUp} className="flex flex-col gap-2.5 flex-shrink-0 min-w-[140px]">
+            {isOwn && (
+              <>
+                <Button size="sm" variant="outline" className="rounded-full gap-2 justify-start"
+                  onClick={() => navigate(`/members/${username}/edit`)}>
+                  <Edit3 size={13} /> Edit Profile
+                </Button>
+                <Button size="sm" variant="outline" className="rounded-full gap-2 justify-start"
+                  title="Re-sync skills, bio and experience from your latest GitHub data"
+                  onClick={async () => {
+                    if (!username || !student || !ghUser) return;
+                    clearGHCache(username);
+                    toast({ title: "Refreshing from GitHub…", description: "Fetching latest data." });
+                    try {
+                      const [freshUser, freshRepos] = await Promise.all([
+                        fetchGHUser(username),
+                        fetchGHRepos(username),
+                      ]);
+                      setGhUser(freshUser);
+                      setRepos(freshRepos);
+                      const freshMap = await aggregateLanguages(username, freshRepos);
+                      setLangMap(freshMap);
+                      // Force-run auto-fill (ignore the "needs fill" guard)
+                      const { updates, summary } = buildAutoProfile(student, freshUser, freshRepos, freshMap);
+                      if (Object.keys(updates).length > 0) {
+                        const saved = updateStudent(student.id, updates);
+                        if (saved) {
+                          setStudent(saved);
+                          toast({ title: "Profile updated ✓", description: summary.join(" · ") });
+                        }
+                      } else {
+                        toast({ title: "Already up to date", description: "No new data found on GitHub." });
+                      }
+                    } catch {
+                      toast({ title: "Refresh failed", description: "GitHub may be rate-limited.", variant: "destructive" });
+                    }
+                  }}>
+                  <RefreshCw size={13} /> Sync from GitHub
+                </Button>
+                <Button size="sm" variant="outline" className="rounded-full gap-2 justify-start" onClick={() => previewResume(student, ghUser, repos, langMap)}>
+                  <Eye size={13} /> Preview Resume
+                </Button>
+                <Button size="sm" variant="outline" className="rounded-full gap-2 justify-start" onClick={() => openResumePrintWindow(student, ghUser, repos, langMap)}>
+                  <Printer size={13} /> Print / Save PDF
+                </Button>
+                <Button size="sm" variant="outline" className="rounded-full gap-2 justify-start"
+                  onClick={() => downloadLatex(student, ghUser, repos, langMap)}>
+                  <FileText size={13} /> LaTeX Resume
+                </Button>
+                <Button size="sm" variant="ghost" className="rounded-full gap-2 justify-start text-foreground/50"
+                  onClick={() => { logout(); navigate("/join"); }}>
+                  <LogOut size={13} /> Sign Out
+                </Button>
+              </>
+            )}
+          </motion.div>
+        </motion.div>
+
+        {/* ── STATS ROW ────────────────────────────────────────────────── */}
+        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
+          className="flex flex-wrap gap-3 mb-10">
+          <StatPill label="Repos" value={originalRepos} />
+          <StatPill label="Stars" value={totalStars} />
+          <StatPill label="Followers" value={ghUser?.followers ?? 0} />
+          <StatPill label="Following" value={ghUser?.following ?? 0} />
+          {langs[0] && <StatPill label="Top Lang" value={langs[0].lang} />}
+        </motion.div>
+
+        {/* ── COMPLETENESS BANNER (own profile only) ───────────────────── */}
+        {isOwn && completenessScore < 100 && (
+          <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}
+            className="mb-10 glass rounded-2xl p-5 flex items-center gap-5 flex-wrap">
+            {/* Ring */}
+            <div className="relative flex-shrink-0">
+              <svg width="56" height="56" viewBox="0 0 56 56">
+                <circle cx="28" cy="28" r="22" fill="none" stroke="currentColor"
+                  strokeWidth="4" className="text-foreground/10" />
+                <circle cx="28" cy="28" r="22" fill="none" stroke="currentColor"
+                  strokeWidth="4" strokeLinecap="round" className="text-primary"
+                  strokeDasharray={`${2 * Math.PI * 22}`}
+                  strokeDashoffset={`${2 * Math.PI * 22 * (1 - completenessScore / 100)}`}
+                  transform="rotate(-90 28 28)" />
+              </svg>
+              <span className="absolute inset-0 flex items-center justify-center text-xs font-heading font-light text-foreground">
+                {completenessScore}%
+              </span>
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-heading font-light tracking-wide text-foreground mb-1">
+                Profile {completenessScore}% complete
+              </p>
+              <p className="text-xs text-foreground/50 font-light">
+                Missing: {missingFields.join(", ")}
+              </p>
+            </div>
+            <Link to={`/members/${username}/edit`}>
+              <Button size="sm" className="rounded-full gap-2 flex-shrink-0">
+                <Edit3 size={13} /> Complete Profile
+              </Button>
+            </Link>
+          </motion.div>
+        )}
+        {/* ── CONTRIBUTION HEATMAP ─────────────────────────────────────── */}
+        <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}
+          className="mb-10">
+          <Card className="glass border-0 rounded-3xl overflow-hidden">
+            <CardHeader className="pb-2 pt-6 px-6">
+              <SectionTitle icon={Github} title="Contribution Activity" />
+            </CardHeader>
+            <CardContent className="px-6 pb-6">
+              <ContributionGraph username={student.githubUsername} />
+            </CardContent>
+          </Card>
+        </motion.div>
+
+        {/* ── MAIN GRID ────────────────────────────────────────────────── */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+
+          {/* LEFT COLUMN */}
+          <div className="space-y-8">
+
+            {/* Language donut */}
+            {langs.length > 0 && (
+              <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
+                <Card className="glass border-0 rounded-3xl">
+                  <CardHeader className="pb-0">
+                    <SectionTitle icon={Code2} title="Language Breakdown" />
+                  </CardHeader>
+                  <CardContent>
+                    <LangDonut langs={langs} />
+                  </CardContent>
+                </Card>
+              </motion.div>
+            )}
+
+            {/* Skills */}
+            {student.skills.length > 0 ? (
+              <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }}>
+                <Card className="glass border-0 rounded-3xl">
+                  <CardHeader className="pb-0">
+                    <SectionTitle icon={Award} title="Skills" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex flex-wrap gap-2">
+                      {student.skills.map((s) => (
+                        <Badge key={s} variant="secondary" className="font-light text-xs">{s}</Badge>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            ) : isOwn ? (
+              <EmptyCTA icon={Award} label="Skills" editUrl={`/members/${username}/edit`} hint="Add your tech stack" />
+            ) : null}
+
+            {/* Interests */}
+            {student.interests.length > 0 && (
+              <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}>
+                <Card className="glass border-0 rounded-3xl">
+                  <CardHeader className="pb-0">
+                    <SectionTitle icon={BookOpen} title="Interests" />
+                  </CardHeader>
+                  <CardContent>
+                    <div className="flex flex-wrap gap-2">
+                      {student.interests.map((i) => (
+                        <Badge key={i} className="font-light text-[10px] bg-primary/10 text-primary border-0">{i}</Badge>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            )}
+
+            {/* Certifications */}
+            {student.certifications.length > 0 && (
+              <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.45 }}>
+                <Card className="glass border-0 rounded-3xl">
+                  <CardHeader className="pb-0">
+                    <SectionTitle icon={Award} title="Certifications" />
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    {student.certifications.map((c: CertificationEntry) => (
+                      <div key={c.id} className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className="text-sm font-light text-foreground">{c.name}</p>
+                          <p className="text-xs text-foreground/50">{c.issuer}{c.date ? ` · ${c.date}` : ""}</p>
+                        </div>
+                        {c.url && (
+                          <a href={c.url} target="_blank" rel="noopener noreferrer">
+                            <ExternalLink size={13} className="text-foreground/30 hover:text-primary mt-1 transition-colors" />
+                          </a>
+                        )}
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              </motion.div>
+            )}
+
+            {/* Members directory link */}
+            <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}>
+              <Link to="/members">
+                <div className="flex items-center gap-3 px-5 py-4 glass rounded-2xl hover:bg-primary/5 transition-all group cursor-pointer">
+                  <Users size={16} className="text-primary/60 group-hover:text-primary transition-colors" />
+                  <span className="text-xs font-light tracking-widest uppercase text-foreground/50 group-hover:text-foreground transition-colors">
+                    Browse Members
+                  </span>
+                  <ChevronRight size={13} className="ml-auto text-foreground/30 group-hover:text-primary transition-colors" />
+                </div>
+              </Link>
+            </motion.div>
+          </div>
+
+          {/* RIGHT COLUMN */}
+          <div className="lg:col-span-2 space-y-8">
+
+            {/* Education */}
+            {student.education.length > 0 ? (
+              <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
+                <Card className="glass border-0 rounded-3xl">
+                  <CardHeader className="pb-0">
+                    <SectionTitle icon={GraduationCap} title="Education" />
+                  </CardHeader>
+                  <CardContent className="space-y-5">
+                    {student.education.map((e: EducationEntry) => (
+                      <div key={e.id} className="flex items-start gap-4">
+                        <div className="w-2 h-2 rounded-full bg-primary mt-2 flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-start justify-between gap-2 flex-wrap">
+                            <p className="font-heading font-light tracking-wide text-foreground">{e.institution}</p>
+                            <span className="text-xs text-foreground/40 flex-shrink-0">{e.startYear}–{e.endYear ?? "Present"}</span>
+                          </div>
+                          <p className="text-sm text-foreground/60 font-light mt-0.5">
+                            {e.degree}{e.field ? `, ${e.field}` : ""}{e.grade ? ` · ${e.grade}` : ""}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              </motion.div>
+            ) : isOwn ? (
+              <EmptyCTA icon={GraduationCap} label="Education" editUrl={`/members/${username}/edit`} hint="Add your university or college" />
+            ) : null}
+
+            {/* Experience */}
+            {student.experience.length > 0 ? (
+              <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }}>
+                <Card className="glass border-0 rounded-3xl">
+                  <CardHeader className="pb-0">
+                    <SectionTitle icon={Briefcase} title="Experience" />
+                  </CardHeader>
+                  <CardContent className="space-y-5">
+                    {student.experience.map((x: ExperienceEntry) => (
+                      <div key={x.id} className="flex items-start gap-4">
+                        <div className="w-2 h-2 rounded-full bg-primary mt-2 flex-shrink-0" />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-start justify-between gap-2 flex-wrap">
+                            <p className="font-heading font-light tracking-wide text-foreground">{x.role}</p>
+                            <span className="text-xs text-foreground/40 flex-shrink-0">{x.startDate}–{x.endDate ?? "Present"}</span>
+                          </div>
+                          <p className="text-sm text-foreground/60 font-light">{x.company}</p>
+                          {x.description && <p className="text-xs text-foreground/50 mt-1 font-light">{x.description}</p>}
+                        </div>
+                      </div>
+                    ))}
+                  </CardContent>
+                </Card>
+              </motion.div>
+            ) : isOwn ? (
+              <EmptyCTA icon={Briefcase} label="Experience" editUrl={`/members/${username}/edit`} hint="Add internships, jobs, or open source work" />
+            ) : null}
+
+            {/* Repos */}
+            <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}>
+              <Card className="glass border-0 rounded-3xl">
+                <CardHeader className="pb-0">
+                  <div className="flex items-center justify-between flex-wrap gap-3">
+                    <SectionTitle icon={Github} title="GitHub Repositories" />
+                    <div className="flex gap-2 mb-4">
+                      {(["top", "all", "starred"] as const).map((f) => (
+                        <button key={f} onClick={() => setRepoFilter(f)}
+                          className={`px-4 py-1.5 rounded-full text-[10px] uppercase tracking-widest font-light transition-all duration-300 ${repoFilter === f ? "bg-primary text-primary-foreground" : "glass text-foreground/50 hover:text-foreground"}`}>
+                          {f}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {displayRepos.length === 0
+                    ? <p className="text-foreground/40 font-light text-sm text-center py-6">No repositories to display.</p>
+                    : (
+                      <motion.div variants={stagger} initial="hidden" animate="show"
+                        className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        {displayRepos.map((repo) => <RepoCard key={repo.id} repo={repo} />)}
+                      </motion.div>
+                    )
+                  }
+                  {repos.length > 18 && (
+                    <div className="mt-4 text-center">
+                      <a href={`https://github.com/${student.githubUsername}?tab=repositories`}
+                        target="_blank" rel="noopener noreferrer"
+                        className="text-xs text-foreground/50 hover:text-primary font-light inline-flex items-center gap-1 transition-colors">
+                        View all on GitHub <ChevronRight size={12} />
+                      </a>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            </motion.div>
+
+          </div>
+        </div>
+      </div>
+
+      <Footer />
+    </div>
+  );
+};
+
+export default MemberProfile;
