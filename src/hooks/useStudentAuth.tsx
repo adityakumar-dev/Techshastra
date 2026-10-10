@@ -29,33 +29,32 @@ export const StudentAuthProvider = ({ children }: { children: ReactNode }) => {
   );
 
   const login = useCallback(async (email: string, password: string): Promise<boolean> => {
-    // 1. Try Supabase Auth
+    // Supabase Auth is the single source of truth for production.
+    // The local-store fallback has been intentionally removed —
+    // deleting a user from Supabase must fully revoke their access.
+    if (!isSupabaseConfigured()) return false;
+
     try {
-      if (isSupabaseConfigured()) {
-        const remote = await signInStudentRemote(email, password);
-        if (remote) {
-          const sName = remote.student?.name || remote.user.user_metadata?.full_name || email;
-          const sGh = remote.student?.githubUsername || remote.user.user_metadata?.github_username || "";
-          const newSession: StudentSession = {
-            studentId: remote.student?.id || remote.user.id,
-            githubUsername: sGh,
-            name: sName,
-            authenticated_at: new Date().toISOString(),
-          };
-          document.cookie = `ts_student_session=${encodeURIComponent(JSON.stringify(newSession))}; max-age=${7 * 86400}; path=/; SameSite=Lax`;
-          setSession(newSession);
-          return true;
-        }
+      const remote = await signInStudentRemote(email, password);
+      if (remote) {
+        const sName = remote.student?.name || remote.user.user_metadata?.full_name || email;
+        const sGh = remote.student?.githubUsername || remote.user.user_metadata?.github_username || "";
+        const newSession: StudentSession = {
+          studentId: remote.student?.id || remote.user.id,
+          githubUsername: sGh,
+          name: sName,
+          authenticated_at: new Date().toISOString(),
+        };
+        document.cookie = `ts_student_session=${encodeURIComponent(JSON.stringify(newSession))}; max-age=${7 * 86400}; path=/; SameSite=Lax`;
+        setSession(newSession);
+        return true;
       }
     } catch (_err) {
-      console.warn("Supabase auth sign in error, trying local store", _err);
+      console.warn("Supabase sign-in failed:", _err);
     }
-
-    // 2. Fallback to local store
-    const s = signInStudent(email, password);
-    if (s) { setSession(s); return true; }
     return false;
   }, []);
+
 
   const logout = useCallback(async () => {
     try {
