@@ -141,7 +141,7 @@ type EnquiryData = z.infer<typeof enquirySchema>;
 // ─── SUB-COMPONENTS ───────────────────────────────────────────────────────────
 
 const inputCls =
-  "glass h-14 rounded-2xl border-0 focus-visible:ring-1 focus-visible:ring-primary/30";
+  "glass h-14 rounded-2xl border-0 focus-visible:ring-1 focus-visible:ring-primary/30 placeholder:text-foreground/35 placeholder:font-light";
 
 /** Shared interests checkbox grid */
 const InterestsGrid = ({
@@ -420,7 +420,7 @@ const SignupForm = ({ onSuccess }: { onSuccess: (username: string) => void }) =>
           <FormItem>
             <FormLabel className="text-xs font-light tracking-widest uppercase text-foreground/50">Short Bio (optional)</FormLabel>
             <FormControl>
-              <Textarea {...field} className="glass min-h-[100px] rounded-2xl border-0 focus-visible:ring-1 focus-visible:ring-primary/30 resize-none p-6 font-light italic" placeholder="Tell us about yourself..." />
+              <Textarea {...field} className="glass min-h-[100px] rounded-2xl border-0 focus-visible:ring-1 focus-visible:ring-primary/30 resize-none p-6 font-light italic placeholder:text-foreground/35 placeholder:font-light" placeholder="Tell us about yourself..." />
             </FormControl>
             <FormMessage />
           </FormItem>
