@@ -29,6 +29,8 @@ import {
   setAdminCredentialBlockDB,
   getPageVisibilityList,
   togglePageVisibilityDB,
+  getSuperAdminFromDB,
+  saveSuperAdminToDB,
 } from "./services/adminService";
 
 // ─── STORAGE KEYS ────────────────────────────────────────────────────
@@ -41,16 +43,15 @@ const SUPER_ADMIN_KEY_STORAGE = "ts_super_admin_key";
 const generateCredKey = (name: string, mobile: string, dob: string): string =>
   `${name.toLowerCase().trim()}${mobile}${dob}`;
 
-// ─── SUPER ADMIN (configurable) ───────────────────────────────────────
+// ─── SUPER ADMIN (configurable, server-backed) ──────────────────────────
 /**
- * Super admin credentials are stored in localStorage under SUPER_ADMIN_KEY_STORAGE
- * so they can be changed without editing source code.
+ * Super admin credentials are stored BOTH in Supabase (admin_credentials with role=super_admin)
+ * AND in localStorage as a fast cache.
  *
- * First-run default: name="Super Admin", mobile="1234567890", dob="2000-01-01"
- * The setup flow in Auth.tsx lets the super admin change these on first login.
- *
- * ponytail: still localStorage, still client-side. Ceiling: no server validation.
- * Upgrade: hash with SubtleCrypto PBKDF2 when a backend exists.
+ * This ensures:
+ * - Setup page shows only ONCE globally (on any device)
+ * - Other devices can verify super admin credentials via Supabase
+ * - Works offline (localStorage fallback)
  */
 const DEFAULT_SUPER_ADMIN = { name: "Super Admin", mobile: "1234567890", dob: "2000-01-01" };
 
@@ -63,16 +64,56 @@ export const getSuperAdminKey = (): string => {
   return key;
 };
 
-export const setSuperAdminCredentials = (name: string, mobile: string, dob: string): void => {
-  localStorage.setItem(SUPER_ADMIN_KEY_STORAGE, generateCredKey(name, mobile, dob));
+/**
+ * Set super admin credentials: saves to localStorage AND Supabase.
+ * This is the canonical write path — called only from the setup form.
+ */
+export const setSuperAdminCredentials = async (name: string, mobile: string, dob: string): Promise<void> => {
+  const key = generateCredKey(name, mobile, dob);
+  localStorage.setItem(SUPER_ADMIN_KEY_STORAGE, key);
+  // Persist to Supabase so setup is globally one-time
+  try {
+    await saveSuperAdminToDB(name, mobile, dob);
+  } catch (e) {
+    console.warn('Failed to save super admin to Supabase:', e);
+  }
 };
 
-/** Returns true if this is the first login (credentials still at default) */
-export const isSuperAdminDefault = (): boolean => {
+/**
+ * Synchronous local-only check (used as fast initial state).
+ * Only reliable when localStorage is already populated (i.e. same device).
+ */
+export const isSuperAdminDefaultLocal = (): boolean => {
   const key = localStorage.getItem(SUPER_ADMIN_KEY_STORAGE);
   const defaultKey = generateCredKey(DEFAULT_SUPER_ADMIN.name, DEFAULT_SUPER_ADMIN.mobile, DEFAULT_SUPER_ADMIN.dob);
   return !key || key === defaultKey;
 };
+
+/**
+ * Async global check: returns true if NO super admin exists anywhere
+ * (neither in localStorage nor in Supabase). Shows setup only once globally.
+ */
+export const isSuperAdminSetupNeeded = async (): Promise<boolean> => {
+  // Fast path: if localStorage already has non-default credentials, skip the check
+  if (!isSuperAdminDefaultLocal()) return false;
+
+  // Slow path: check Supabase for any super_admin row
+  try {
+    const dbAdmin = await getSuperAdminFromDB();
+    if (dbAdmin) {
+      // Super admin exists in DB — sync credentials to localStorage
+      const key = generateCredKey(dbAdmin.name, dbAdmin.mobile, dbAdmin.dob);
+      localStorage.setItem(SUPER_ADMIN_KEY_STORAGE, key);
+      return false; // Setup is done, don't show setup page
+    }
+  } catch (_e) {}
+
+  // No super admin anywhere — show setup
+  return true;
+};
+
+/** @deprecated Use isSuperAdminSetupNeeded() for cross-device correctness */
+export const isSuperAdminDefault = (): boolean => isSuperAdminDefaultLocal();
 
 // ─── STORAGE HELPERS ─────────────────────────────────────────────────
 const getCredentials = (): AdminCredential[] => {

@@ -9,7 +9,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  verifyAdmin, setSuperAdminCredentials, isSuperAdminDefault, getAdminUsers,
+  verifyAdmin, setSuperAdminCredentials, isSuperAdminSetupNeeded, getAdminUsers,
   type AdminRole,
   type AdminCredential,
   createAdminLoginRequest,
@@ -33,12 +33,11 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
-type AuthState = "login" | "checking" | "denied" | "blocked" | "setup" | "awaiting_approval" | "request_rejected";
+type AuthState = "login" | "checking" | "denied" | "blocked" | "setup" | "awaiting_approval" | "request_rejected" | "initializing";
 
 const Auth = () => {
-  const [authState, setAuthState] = useState<AuthState>(() =>
-    isSuperAdminDefault() ? "setup" : "login"
-  );
+  // Start with "initializing" to check Supabase for existing super admin
+  const [authState, setAuthState] = useState<AuthState>("initializing");
   const [loading, setLoading]     = useState(false);
   const [blockedName, setBlockedName] = useState("");
   const [currentRequestId, setCurrentRequestId] = useState<string | null>(null);
@@ -57,6 +56,21 @@ const Auth = () => {
 
   const navigate = useNavigate();
   const { toast } = useToast();
+
+  // ── INITIALIZATION: Global super admin check ─────────────────────────
+  useEffect(() => {
+    let cancelled = false;
+    isSuperAdminSetupNeeded().then((needsSetup) => {
+      if (!cancelled) {
+        setAuthState(needsSetup ? "setup" : "login");
+      }
+    }).catch(() => {
+      // If Supabase check fails, fall back to login (not setup)
+      // to avoid showing setup page on new devices when DB is unreachable
+      if (!cancelled) setAuthState("login");
+    });
+    return () => { cancelled = true; };
+  }, []);
 
   const handleNameChange = (val: string) => {
     if (val.includes(",")) {
@@ -237,25 +251,37 @@ const Auth = () => {
 
   // ── FIRST-RUN SETUP ─────────────────────────────────────────────────
 
-  const handleSetup = (e: React.FormEvent) => {
+  const handleSetup = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!setupName.trim() || !setupMobile.trim() || !setupDob) {
       toast({ title: "All fields required", variant: "destructive" });
       return;
     }
-    const confirmKey = `${setupName.trim().toLowerCase()}${setupMobile.trim()}${setupDob}`;
-    const confirmKey2 = `${setupConfirm.trim().toLowerCase()}`;
     // simple re-entry confirmation: just re-type name
     if (setupName.trim().toLowerCase() !== setupConfirm.trim().toLowerCase()) {
       toast({ title: "Name confirmation doesn't match", variant: "destructive" });
       return;
     }
-    setSuperAdminCredentials(setupName.trim(), setupMobile.trim(), setupDob);
+    setLoading(true);
+    await setSuperAdminCredentials(setupName.trim(), setupMobile.trim(), setupDob);
+    setLoading(false);
     toast({ title: "Super admin credentials set ✓", description: "You can now log in with your new credentials." });
     setAuthState("login");
   };
 
   // ── RENDER ─────────────────────────────────────────────────────────
+
+  // Initializing: checking Supabase for global super admin state
+  if (authState === "initializing") {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-primary/5">
+        <div className="flex flex-col items-center gap-3 text-muted-foreground">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+          <span className="text-sm">Verifying system state…</span>
+        </div>
+      </div>
+    );
+  }
 
   // First-run: set new super admin credentials
   if (authState === "setup") {

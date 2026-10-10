@@ -1,5 +1,10 @@
 import { supabase, isSupabaseConfigured } from './supabase/client';
 import { addLogEntry } from './activityLogStore';
+import {
+  createAdminLoginRequestDB,
+  getPendingAdminLoginRequestsDB,
+  updateAdminLoginRequestDB,
+} from './services/adminService';
 
 export type LoginRequestStatus = 'pending' | 'approved' | 'rejected' | 'cancelled' | 'expired';
 
@@ -213,6 +218,7 @@ if (broadcastChannel) {
 
 /**
  * Creates a new pending login request from an admin.
+ * Persists to Supabase for cross-device delivery.
  */
 export const createAdminLoginRequest = (params: {
   adminId: string;
@@ -225,6 +231,8 @@ export const createAdminLoginRequest = (params: {
   const current = getStoredAdminLoginRequests();
   const id = `req_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
   const device = params.device || getClientDeviceString();
+  const now = new Date().toISOString();
+  const expiresAt = new Date(Date.now() + REQUEST_TIMEOUT_MS).toISOString();
 
   const newRequest: AdminLoginRequest = {
     id,
@@ -235,12 +243,27 @@ export const createAdminLoginRequest = (params: {
     role: params.role,
     device,
     status: 'pending',
-    requestedAt: new Date().toISOString(),
+    requestedAt: now,
   };
 
   const updated = [newRequest, ...current.filter((r) => !(r.adminId === params.adminId && r.status === 'pending'))];
   saveStoredAdminLoginRequests(updated);
   broadcastChange(newRequest);
+
+  // Persist to Supabase so super admin sees it even from a different device/session
+  createAdminLoginRequestDB({
+    id,
+    admin_id: params.adminId,
+    admin_name: params.adminName,
+    mobile: params.mobile,
+    dob: params.dob,
+    role: params.role,
+    device,
+    status: 'pending',
+    requested_at: now,
+    expires_at: expiresAt,
+  }).catch((e) => console.warn('Failed to persist login request to Supabase:', e));
+
   return newRequest;
 };
 
@@ -272,6 +295,11 @@ export const approveAdminLoginRequest = (
   const updated = current.map((r) => (r.id === requestId ? approved : r));
   saveStoredAdminLoginRequests(updated);
   broadcastChange(approved);
+
+  // Update Supabase row so the requesting device can poll for the decision
+  updateAdminLoginRequestDB(requestId, 'approved', superAdminName).catch((e) =>
+    console.warn('Failed to update login request approval in Supabase:', e)
+  );
 
   // Add to activity audit log
   try {
@@ -308,6 +336,11 @@ export const rejectAdminLoginRequest = (
   const updated = current.map((r) => (r.id === requestId ? rejected : r));
   saveStoredAdminLoginRequests(updated);
   broadcastChange(rejected);
+
+  // Update Supabase row so the requesting device sees the rejection
+  updateAdminLoginRequestDB(requestId, 'rejected', superAdminName).catch((e) =>
+    console.warn('Failed to update login request rejection in Supabase:', e)
+  );
 
   // Add to activity audit log
   try {
@@ -346,17 +379,47 @@ export const cancelAdminLoginRequest = (requestId: string): void => {
 
 /**
  * Subscribes to real-time updates for all login requests.
+ * Polls Supabase DB every 3 seconds + instant Realtime notifications.
  */
 export const subscribeToAdminLoginRequests = (
   callback: (requests: AdminLoginRequest[]) => void
 ): (() => void) => {
-  // Initial fire
-  callback(getStoredAdminLoginRequests());
-  queryRealtimeRequestsSync();
-
-  const handleUpdate = () => {
+  // Helper to merge DB rows into local state
+  const mergeFromDB = async () => {
+    try {
+      const dbPending = await getPendingAdminLoginRequestsDB();
+      if (dbPending.length > 0) {
+        const current = getStoredAdminLoginRequests();
+        const map = new Map<string, AdminLoginRequest>();
+        for (const r of current) map.set(r.id, r);
+        for (const db of dbPending) {
+          const mapped: AdminLoginRequest = {
+            id: db.id,
+            adminId: db.admin_id,
+            adminName: db.admin_name,
+            mobile: db.mobile,
+            dob: db.dob,
+            role: 'admin',
+            device: db.device || 'Unknown',
+            status: db.status as any,
+            requestedAt: db.requested_at,
+            respondedAt: db.responded_at || undefined,
+            respondedBy: db.responded_by || undefined,
+          };
+          map.set(db.id, mapped);
+        }
+        const merged = Array.from(map.values());
+        saveStoredAdminLoginRequests(merged);
+      }
+    } catch (_e) {}
     callback(getStoredAdminLoginRequests());
   };
+
+  // Initial fire
+  mergeFromDB();
+  queryRealtimeRequestsSync();
+
+  const handleUpdate = () => mergeFromDB();
 
   if (typeof window !== 'undefined') {
     window.addEventListener('storage', (e) => {
@@ -365,28 +428,84 @@ export const subscribeToAdminLoginRequests = (
     window.addEventListener('ts_admin_request_change', handleUpdate);
   }
 
-  // Poll fallback every 1.5 seconds to handle any cross-tab timing
-  const intervalId = setInterval(handleUpdate, 1500);
+  // Subscribe to Supabase Realtime postgres_changes for instant cross-device updates
+  let realtimeSub: ReturnType<typeof supabase.channel> | null = null;
+  if (isSupabaseConfigured()) {
+    try {
+      realtimeSub = supabase
+        .channel('admin_login_requests_changes')
+        .on(
+          'postgres_changes' as any,
+          { event: '*', schema: 'public', table: 'admin_login_requests' },
+          () => { mergeFromDB(); }
+        )
+        .subscribe();
+    } catch (_e) {}
+  }
+
+  // Poll DB every 3 seconds as a reliable fallback
+  const intervalId = setInterval(handleUpdate, 3000);
 
   return () => {
     if (typeof window !== 'undefined') {
       window.removeEventListener('ts_admin_request_change', handleUpdate);
     }
     clearInterval(intervalId);
+    if (realtimeSub) {
+      try { realtimeSub.unsubscribe(); } catch (_e) {}
+    }
   };
 };
 
 /**
  * Subscribes to real-time status of a specific login request.
+ * Polls Supabase DB every 2 seconds to detect approve/reject decisions cross-device.
  */
 export const subscribeToSpecificRequest = (
   requestId: string,
   callback: (request: AdminLoginRequest | null) => void
 ): (() => void) => {
-  const checkCurrent = () => {
+  const checkCurrent = async () => {
+    // First check local storage
     const list = getStoredAdminLoginRequests();
-    const req = list.find((r) => r.id === requestId) || null;
-    callback(req);
+    const local = list.find((r) => r.id === requestId) || null;
+
+    // If locally it's still pending, also check DB for super admin's decision
+    if (!local || local.status === 'pending') {
+      try {
+        if (isSupabaseConfigured()) {
+          const { data } = await supabase
+            .from('admin_login_requests')
+            .select('*')
+            .eq('id', requestId)
+            .maybeSingle();
+
+          if (data) {
+            const mapped: AdminLoginRequest = {
+              id: data.id,
+              adminId: data.admin_id,
+              adminName: data.admin_name,
+              mobile: data.mobile,
+              dob: data.dob,
+              role: 'admin',
+              device: data.device || 'Unknown',
+              status: data.status as any,
+              requestedAt: data.requested_at,
+              respondedAt: data.responded_at || undefined,
+              respondedBy: data.responded_by || undefined,
+            };
+            // Update local cache with DB state
+            const updated = list.map((r) => r.id === requestId ? mapped : r);
+            if (!list.find((r) => r.id === requestId)) updated.push(mapped);
+            saveStoredAdminLoginRequests(updated);
+            callback(mapped);
+            return;
+          }
+        }
+      } catch (_e) {}
+    }
+
+    callback(local);
   };
 
   checkCurrent();
@@ -400,7 +519,8 @@ export const subscribeToSpecificRequest = (
     window.addEventListener('ts_admin_request_change', handleUpdate);
   }
 
-  const intervalId = setInterval(handleUpdate, 1200);
+  // Poll every 2 seconds — the admin's device needs to detect the super admin's decision
+  const intervalId = setInterval(handleUpdate, 2000);
 
   return () => {
     if (typeof window !== 'undefined') {

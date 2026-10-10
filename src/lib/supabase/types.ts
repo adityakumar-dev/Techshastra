@@ -197,6 +197,39 @@ export interface Database {
         };
         Update: Partial<Database['public']['Tables']['admin_credentials']['Insert']>;
       };
+      admin_login_requests: {
+        Row: {
+          id: string;
+          admin_id: string;
+          admin_name: string;
+          mobile: string;
+          dob: string;
+          role: string;
+          device: string | null;
+          status: string;
+          requested_at: string;
+          responded_at: string | null;
+          responded_by: string | null;
+          expires_at: string;
+          created_at: string;
+        };
+        Insert: {
+          id: string;
+          admin_id: string;
+          admin_name: string;
+          mobile: string;
+          dob: string;
+          role?: string;
+          device?: string | null;
+          status?: string;
+          requested_at?: string;
+          responded_at?: string | null;
+          responded_by?: string | null;
+          expires_at?: string;
+          created_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['admin_login_requests']['Insert']>;
+      };
       admin_sessions: {
         Row: {
           id: string;

@@ -89,6 +89,135 @@ export const setAdminCredentialBlockDB = async (
   return !error;
 };
 
+// ─── SUPER ADMIN GLOBAL STATE (Server-Backed) ─────────────────────────
+
+/**
+ * Fetch the super admin record from Supabase.
+ * Returns null if not found (setup not yet done).
+ */
+export const getSuperAdminFromDB = async (): Promise<AdminCredentialDB | null> => {
+  if (!isSupabaseConfigured()) return null;
+
+  const { data, error } = await supabase
+    .from('admin_credentials')
+    .select('*')
+    .eq('role', 'super_admin')
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.error('Failed to fetch super admin from Supabase:', error);
+    return null;
+  }
+  return data;
+};
+
+/**
+ * Save (upsert) super admin credentials to Supabase.
+ * Uses a sentinel ID 'super_admin' for stable upsert.
+ */
+export const saveSuperAdminToDB = async (
+  name: string,
+  mobile: string,
+  dob: string
+): Promise<boolean> => {
+  if (!isSupabaseConfigured()) return false;
+
+  // First check if a super_admin already exists to update instead of insert
+  const existing = await getSuperAdminFromDB();
+
+  if (existing) {
+    const { error } = await supabase
+      .from('admin_credentials')
+      .update({ name, mobile, dob, updated_at: new Date().toISOString() } as any)
+      .eq('id', existing.id);
+    return !error;
+  } else {
+    const { error } = await supabase
+      .from('admin_credentials')
+      .insert({
+        name,
+        mobile,
+        dob,
+        role: 'super_admin',
+        is_blocked: false,
+      });
+    return !error;
+  }
+};
+
+// ─── SERVER-SIDE ADMIN LOGIN REQUESTS ────────────────────────────────
+
+export type AdminLoginRequestDB = Database['public']['Tables']['admin_login_requests']['Row'];
+export type AdminLoginRequestInsert = Database['public']['Tables']['admin_login_requests']['Insert'];
+
+/**
+ * Persist a new admin login request to Supabase.
+ */
+export const createAdminLoginRequestDB = async (
+  req: AdminLoginRequestInsert
+): Promise<boolean> => {
+  if (!isSupabaseConfigured()) return false;
+
+  const { error } = await supabase
+    .from('admin_login_requests')
+    .upsert(req, { onConflict: 'id' });
+
+  if (error) {
+    console.error('Failed to create admin login request in Supabase:', error);
+    return false;
+  }
+  return true;
+};
+
+/**
+ * Fetch pending admin login requests from Supabase.
+ */
+export const getPendingAdminLoginRequestsDB = async (): Promise<AdminLoginRequestDB[]> => {
+  if (!isSupabaseConfigured()) return [];
+
+  const { data, error } = await supabase
+    .from('admin_login_requests')
+    .select('*')
+    .eq('status', 'pending')
+    .gt('expires_at', new Date().toISOString())
+    .order('requested_at', { ascending: false });
+
+  if (error) {
+    console.error('Failed to fetch pending login requests:', error);
+    return [];
+  }
+  return data;
+};
+
+/**
+ * Update the status of an admin login request.
+ */
+export const updateAdminLoginRequestDB = async (
+  id: string,
+  status: 'approved' | 'rejected' | 'cancelled' | 'expired',
+  respondedBy?: string
+): Promise<boolean> => {
+  if (!isSupabaseConfigured()) return false;
+
+  const { error } = await supabase
+    .from('admin_login_requests')
+    .update({
+      status,
+      responded_at: new Date().toISOString(),
+      responded_by: respondedBy || null,
+    })
+    .eq('id', id);
+
+  if (error) {
+    console.error('Failed to update admin login request:', error);
+    return false;
+  }
+  return true;
+};
+
+
+
 // ─── ADMIN SESSIONS ("Who is using my panel?") ───────────────────────
 
 /**
