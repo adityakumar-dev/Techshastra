@@ -1,594 +1,691 @@
-/**
- * Auth page — Admin login.
- *
- * Credentials: Name + Mobile + Date of Birth.
- * Session stored in sessionStorage (auto-clears on tab close).
- * First-login flow: if super admin credentials are still default,
- * prompt to set new ones before entering.
- */
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import {
-  verifyAdmin, setSuperAdminCredentials, isSuperAdminSetupNeeded, getAdminUsers,
-  type AdminRole,
+  verifyAdmin,
+  getAdminUsers,
   type AdminCredential,
   createAdminLoginRequest,
-  cancelAdminLoginRequest,
-  subscribeToSpecificRequest,
   getClientDeviceString,
-  type AdminLoginRequest,
 } from "@/lib/adminStore";
-import { registerAdminSession, logAdminAction } from "@/lib/services/adminService";
+import {
+  registerAdminSession,
+  logAdminAction,
+  checkPendingRegistrationByMobileDB,
+  getRequestStatusByMobileDB,
+} from "@/lib/services/adminService";
 import { supabase, isSupabaseConfigured } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Card, CardContent, CardDescription, CardHeader, CardTitle,
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
 } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import {
-  Loader2, ShieldCheck, Lock, AlertTriangle, KeyRound, RefreshCw,
-  Clock, ShieldAlert, CheckCircle2, XCircle, ArrowLeft,
+  ShieldCheck,
+  Lock,
+  RefreshCw,
+  Clock,
+  CheckCircle2,
+  XCircle,
+  ArrowLeft,
+  UserPlus,
+  LogIn,
+  Search,
+  Building,
+  ExternalLink,
+  Shield,
+  Sparkles,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
-type AuthState = "login" | "checking" | "denied" | "blocked" | "setup" | "awaiting_approval" | "request_rejected" | "initializing";
+type AuthTab = "signin" | "register" | "status";
 
-const Auth = () => {
-  // Start with "initializing" to check Supabase for existing super admin
-  const [authState, setAuthState] = useState<AuthState>("initializing");
-  const [loading, setLoading]     = useState(false);
-  const [blockedName, setBlockedName] = useState("");
-  const [currentRequestId, setCurrentRequestId] = useState<string | null>(null);
-  const [activeRequest, setActiveRequest] = useState<AdminLoginRequest | null>(null);
+export default function Auth() {
+  const [activeTab, setActiveTab] = useState<AuthTab>("signin");
+  const [loading, setLoading] = useState(false);
 
-  // Login form fields
-  const [name, setName]     = useState("");
-  const [mobile, setMobile] = useState("");
-  const [dob, setDob]       = useState("");
+  // Sign In State
+  const [signInName, setSignInName] = useState("");
+  const [signInMobile, setSignInMobile] = useState("");
+  const [signInDob, setSignInDob] = useState("");
+  const [blockedAccount, setBlockedAccount] = useState<string | null>(null);
 
-  // Setup form fields
-  const [setupName, setSetupName]     = useState("");
-  const [setupMobile, setSetupMobile] = useState("");
-  const [setupDob, setSetupDob]       = useState("");
-  const [setupConfirm, setSetupConfirm] = useState("");
+  // Register State
+  const [regName, setRegName] = useState("");
+  const [regMobile, setRegMobile] = useState("");
+  const [regDob, setRegDob] = useState("");
+  const [regEmail, setRegEmail] = useState("");
+  const [regDepartment, setRegDepartment] = useState("");
+
+  // Submitted Confirmation State
+  const [submittedRequest, setSubmittedRequest] = useState<{
+    id: string;
+    name: string;
+    mobile: string;
+    date: string;
+  } | null>(null);
+  const [countdown, setCountdown] = useState<number | null>(null);
+
+  // Status Lookup State
+  const [statusMobile, setStatusMobile] = useState("");
+  const [statusResult, setStatusResult] = useState<{
+    found: boolean;
+    status?: "pending" | "approved" | "rejected";
+    name?: string;
+    requestedAt?: string;
+    respondedAt?: string;
+  } | null>(null);
 
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  // ── INITIALIZATION: Global super admin check ─────────────────────────
+  // ── Auto-redirect countdown effect after request submission ───────────────
   useEffect(() => {
-    let cancelled = false;
-    isSuperAdminSetupNeeded().then((needsSetup) => {
-      if (!cancelled) {
-        setAuthState(needsSetup ? "setup" : "login");
-      }
-    }).catch(() => {
-      // If Supabase check fails, fall back to login (not setup)
-      // to avoid showing setup page on new devices when DB is unreachable
-      if (!cancelled) setAuthState("login");
-    });
-    return () => { cancelled = true; };
-  }, []);
-
-  const handleNameChange = (val: string) => {
-    if (val.includes(",")) {
-      const parts = val.split(",").map((p) => p.trim());
-      if (parts.length >= 2) {
-        setName(parts[0]);
-        if (parts[1]) setMobile(parts[1].replace(/[^0-9]/g, ''));
-        if (parts[2]) setDob(parts[2]);
-        toast({
-          title: "Auto-detected credentials format",
-          description: `Name: ${parts[0]}, Mobile: ${parts[1] || ''}`,
-        });
-        return;
-      }
+    if (countdown === null) return;
+    if (countdown <= 0) {
+      navigate("/", { replace: true });
+      return;
     }
-    setName(val);
-  };
+    const timer = setTimeout(() => {
+      setCountdown((prev) => (prev !== null ? prev - 1 : null));
+    }, 1000);
+    return () => clearTimeout(timer);
+  }, [countdown, navigate]);
 
-  // ── REALTIME APPROVAL LISTENER ──────────────────────────────────────
-  useEffect(() => {
-    if (authState !== "awaiting_approval" || !currentRequestId) return;
+  // ── 1. HANDLE SIGN IN ─────────────────────────────────────────────────────
+  const handleSignIn = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!signInName.trim() || !signInMobile.trim() || !signInDob) {
+      toast({ title: "All credentials required", variant: "destructive" });
+      return;
+    }
 
-    const unsubscribe = subscribeToSpecificRequest(currentRequestId, async (req) => {
-      if (!req) return;
-      setActiveRequest(req);
+    setLoading(true);
+    setBlockedAccount(null);
 
-      if (req.status === "approved") {
-        // Super Admin confirmed the login!
-        sessionStorage.setItem("ts_admin_session", JSON.stringify({
-          userId: req.adminId,
-          role: req.role,
-          name: req.adminName,
-          authenticated_at: new Date().toISOString(),
-          approved_by: req.respondedBy || "Super Admin",
-        }));
+    try {
+      // 1. Sync credentials from Supabase
+      let remoteCreds: AdminCredential[] = [];
+      try {
+        remoteCreds = await getAdminUsers();
+      } catch (_e) {}
 
+      let result = verifyAdmin(signInName.trim(), signInMobile.trim(), signInDob, remoteCreds);
+
+      // Direct Supabase fallback
+      if (!result.success && isSupabaseConfigured()) {
         try {
-          await registerAdminSession(req.adminName, req.adminId, null);
-          logAdminAction(
-            req.adminId,
-            req.adminName,
-            req.role,
-            `Logged into admin panel (Approved by ${req.respondedBy || "Super Admin"})`,
-            "admin_sessions"
-          ).catch(() => {});
-        } catch (_err) {
-          console.warn("Failed to register approved session:", _err);
-        }
+          const { data: dbCreds } = await supabase.from("admin_credentials").select("*").limit(50);
+          if (dbCreds && dbCreds.length > 0) {
+            const mapped: AdminCredential[] = dbCreds.map((r: any) => ({
+              id: r.id,
+              name: r.name,
+              mobile: r.mobile,
+              dob: r.dob,
+              email: r.email || undefined,
+              role: r.role as any,
+              is_blocked: r.is_blocked,
+              created_at: r.created_at,
+            }));
+            result = verifyAdmin(signInName.trim(), signInMobile.trim(), signInDob, mapped);
+          }
+        } catch (_dbErr) {}
+      }
+
+      // Check result
+      if (result.success) {
+        // Successful login!
+        sessionStorage.setItem(
+          "ts_admin_session",
+          JSON.stringify({
+            userId: result.id,
+            role: result.role,
+            name: signInName.trim(),
+            authenticated_at: new Date().toISOString(),
+          })
+        );
+
+        await registerAdminSession(signInName.trim(), result.id, null).catch(() => {});
+        logAdminAction(
+          result.id,
+          signInName.trim(),
+          result.role,
+          "Logged into admin panel",
+          "admin_sessions"
+        ).catch(() => {});
 
         toast({
-          title: "Access Confirmed! ✓",
-          description: `Super Admin confirmed your session. Welcome, ${req.adminName}.`,
+          title: "Welcome Back! ✓",
+          description: `Successfully signed in as ${signInName.trim()}.`,
         });
 
         navigate("/admin", { replace: true });
-      } else if (req.status === "rejected") {
-        setAuthState("request_rejected");
-      } else if (req.status === "expired") {
-        toast({
-          title: "Request Expired",
-          description: "Your login confirmation request timed out. Please try logging in again.",
-          variant: "destructive",
-        });
-        setAuthState("login");
+        return;
       }
-    });
 
-    return () => unsubscribe();
-  }, [authState, currentRequestId, navigate, toast]);
-
-  // ── LOGIN ───────────────────────────────────────────────────────────
-
-  const handleSignIn = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!name.trim() || !mobile.trim() || !dob) {
-      toast({ title: "All fields required", variant: "destructive" });
-      return;
-    }
-    setLoading(true);
-    setAuthState("checking");
-
-    // Ensure latest admin credentials from Supabase are synced
-    let remoteCreds: AdminCredential[] = [];
-    try {
-      remoteCreds = await getAdminUsers();
-    } catch (_e) {}
-
-    let result = verifyAdmin(name.trim(), mobile.trim(), dob, remoteCreds);
-
-    // Direct resilient Supabase fallback in case remote sync had lag or table format discrepancy
-    if (!result.success && isSupabaseConfigured()) {
-      try {
-        const { data: dbCreds } = await supabase.from('admin_credentials').select('*').limit(50);
-        if (dbCreds && dbCreds.length > 0) {
-          const mapped: AdminCredential[] = dbCreds.map((r: any) => ({
-            id: r.id,
-            name: r.name,
-            mobile: r.mobile,
-            dob: r.dob,
-            email: r.email || undefined,
-            role: r.role as AdminRole,
-            is_blocked: r.is_blocked,
-            created_at: r.created_at,
-          }));
-          result = verifyAdmin(name.trim(), mobile.trim(), dob, mapped);
-        }
-      } catch (_dbErr) {}
-    }
-
-    if (!result.success) {
+      // Account is blocked
       if (result.blocked) {
-        setBlockedName(result.name);
-        setAuthState("blocked");
+        setBlockedAccount(result.name || signInName.trim());
         setLoading(false);
         return;
       }
 
-      // Credentials not found — treat as NEW ADMIN REGISTRATION REQUEST
-      // Instead of "Access Denied", dispatch an approval request to the super admin
-      // Super admin can approve (which creates the account) or reject
+      // Not found — Check if a pending registration request exists
+      const pendingReq = await checkPendingRegistrationByMobileDB(signInMobile.trim());
+      if (pendingReq) {
+        toast({
+          title: "Registration Pending Review",
+          description: `Your access request submitted on ${new Date(
+            pendingReq.requested_at
+          ).toLocaleDateString()} is waiting for Super Admin approval.`,
+        });
+      } else {
+        toast({
+          title: "Account Not Found",
+          description: "No admin account matches these credentials. If you are new, please use the 'Request Admin Access' tab.",
+          variant: "destructive",
+        });
+      }
+    } catch (err: any) {
+      toast({
+        title: "Login Error",
+        description: err.message || "Failed to sign in. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ── 2. HANDLE REQUEST ACCESS (REGISTRATION) ───────────────────────────────
+  const handleRegisterSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!regName.trim() || !regMobile.trim() || !regDob) {
+      toast({ title: "Name, Mobile, and Date of Birth are required", variant: "destructive" });
+      return;
+    }
+
+    setLoading(true);
+
+    try {
+      // 1. Check if user already has an approved account
+      const remoteCreds = await getAdminUsers().catch(() => []);
+      const alreadyApproved = remoteCreds.find(
+        (c) =>
+          c.mobile.replace(/[^0-9]/g, "").slice(-10) ===
+          regMobile.replace(/[^0-9]/g, "").slice(-10)
+      );
+
+      if (alreadyApproved) {
+        toast({
+          title: "Account Already Exists",
+          description: "An admin account is already registered with this mobile number. Please use the Sign In tab.",
+        });
+        setActiveTab("signin");
+        setSignInMobile(regMobile);
+        setSignInName(alreadyApproved.name);
+        setLoading(false);
+        return;
+      }
+
+      // 2. Check if a request is already pending
+      const existingPending = await checkPendingRegistrationByMobileDB(regMobile.trim());
+      if (existingPending) {
+        toast({
+          title: "Request Already Submitted",
+          description: `A request for this mobile is already pending Super Admin approval. Submitted on ${new Date(
+            existingPending.requested_at
+          ).toLocaleDateString()}.`,
+        });
+        setActiveTab("status");
+        setStatusMobile(regMobile);
+        setLoading(false);
+        return;
+      }
+
+      // 3. Dispatch the new admin registration request
       const regId = `reg_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
       const req = createAdminLoginRequest({
         adminId: regId,
-        adminName: name.trim(),
-        mobile: mobile.trim(),
-        dob,
+        adminName: regName.trim(),
+        mobile: regMobile.trim(),
+        dob: regDob,
         role: "admin",
-        device: getClientDeviceString(),
+        device: `${getClientDeviceString()}${regDepartment ? ` [${regDepartment}]` : ""}`,
         isNewRegistration: true,
       });
 
-      setCurrentRequestId(req.id);
-      setActiveRequest(req);
-      setAuthState("awaiting_approval");
-      setLoading(false);
-      toast({
-        title: "Registration Request Sent",
-        description: "Your request to become an admin has been dispatched to the Super Admin for approval.",
+      // Show confirmation screen instead of blocking loader
+      setSubmittedRequest({
+        id: req.id,
+        name: regName.trim(),
+        mobile: regMobile.trim(),
+        date: new Date().toLocaleDateString(),
       });
-      return;
-    }
+      setCountdown(12); // 12-second gentle auto redirect
 
-    // If Super Admin, grant immediate one-time direct access
-    if (result.role === "super_admin") {
-      sessionStorage.setItem("ts_admin_session", JSON.stringify({
-        userId: result.id,
-        role: result.role,
-        name: name.trim(),
-        authenticated_at: new Date().toISOString(),
-      }));
-
-      try {
-        await registerAdminSession(name.trim(), null, null);
-        logAdminAction(
-          result.id,
-          name.trim(),
-          result.role,
-          "Super Admin logged into admin panel directly",
-          "admin_sessions"
-        ).catch(() => {});
-      } catch (_err) {
-        console.warn("Failed to register admin session in Supabase:", _err);
-      }
-
-      toast({ title: `Welcome, Super Admin` });
-      navigate("/admin", { replace: true });
+      toast({
+        title: "Request Submitted Successfully! 🎉",
+        description: "Your admin registration request has been forwarded to the Super Admin.",
+      });
+    } catch (err: any) {
+      toast({
+        title: "Submission Error",
+        description: err.message || "Failed to submit request.",
+        variant: "destructive",
+      });
+    } finally {
       setLoading(false);
-      return;
     }
-
-    // For regular admins: invoke confirmation flow for Super Admin
-    const req = createAdminLoginRequest({
-      adminId: result.id,
-      adminName: name.trim(),
-      mobile: mobile.trim(),
-      dob,
-      role: "admin",
-      device: getClientDeviceString(),
-    });
-
-    setCurrentRequestId(req.id);
-    setActiveRequest(req);
-    setAuthState("awaiting_approval");
-    setLoading(false);
-    toast({
-      title: "Confirmation Request Dispatched",
-      description: "A confirmation prompt has been dispatched to the Super Admin for approval.",
-    });
   };
 
-  const handleCancelRequest = () => {
-    if (currentRequestId) {
-      cancelAdminLoginRequest(currentRequestId);
-      setCurrentRequestId(null);
-      setActiveRequest(null);
-    }
-    setAuthState("login");
-    toast({ title: "Request Cancelled", description: "Login request has been withdrawn." });
-  };
-
-  // ── FIRST-RUN SETUP ─────────────────────────────────────────────────
-
-  const handleSetup = async (e: React.FormEvent) => {
+  // ── 3. HANDLE STATUS LOOKUP ───────────────────────────────────────────────
+  const handleCheckStatus = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!setupName.trim() || !setupMobile.trim() || !setupDob) {
-      toast({ title: "All fields required", variant: "destructive" });
+    if (!statusMobile.trim()) {
+      toast({ title: "Please enter your mobile number", variant: "destructive" });
       return;
     }
-    // simple re-entry confirmation: just re-type name
-    if (setupName.trim().toLowerCase() !== setupConfirm.trim().toLowerCase()) {
-      toast({ title: "Name confirmation doesn't match", variant: "destructive" });
-      return;
-    }
+
     setLoading(true);
-    await setSuperAdminCredentials(setupName.trim(), setupMobile.trim(), setupDob);
-    setLoading(false);
-    toast({ title: "Super admin credentials set ✓", description: "You can now log in with your new credentials." });
-    setAuthState("login");
+    try {
+      const record = await getRequestStatusByMobileDB(statusMobile.trim());
+      if (record) {
+        setStatusResult({
+          found: true,
+          status: record.status as any,
+          name: record.admin_name,
+          requestedAt: record.requested_at,
+          respondedAt: record.responded_at || undefined,
+        });
+      } else {
+        // Also check if they are already in admin_credentials
+        const remoteCreds = await getAdminUsers().catch(() => []);
+        const matched = remoteCreds.find(
+          (c) =>
+            c.mobile.replace(/[^0-9]/g, "").slice(-10) ===
+            statusMobile.replace(/[^0-9]/g, "").slice(-10)
+        );
+
+        if (matched) {
+          setStatusResult({
+            found: true,
+            status: "approved",
+            name: matched.name,
+          });
+        } else {
+          setStatusResult({ found: false });
+        }
+      }
+    } catch (_err) {
+      setStatusResult({ found: false });
+    } finally {
+      setLoading(false);
+    }
   };
 
-  // ── RENDER ─────────────────────────────────────────────────────────
-
-  // Initializing: checking Supabase for global super admin state
-  if (authState === "initializing") {
+  // ── 4. RENDER SUCCESSFUL SUBMISSION CONFIRMATION ───────────────────────────
+  if (submittedRequest) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-primary/5">
-        <div className="flex flex-col items-center gap-3 text-muted-foreground">
-          <Loader2 className="w-8 h-8 animate-spin text-primary" />
-          <span className="text-sm">Verifying system state…</span>
-        </div>
-      </div>
-    );
-  }
-
-  // First-run: set new super admin credentials
-  if (authState === "setup") {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-primary/5 p-4">
-        <Card className="w-full max-w-md border-primary/20">
-          <CardHeader className="text-center space-y-4">
-            <div className="mx-auto w-16 h-16 rounded-full bg-amber-500/10 flex items-center justify-center">
-              <KeyRound className="w-8 h-8 text-amber-500" />
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-emerald-500/5 p-4">
+        <Card className="w-full max-w-lg border-emerald-500/30 shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+          <CardHeader className="text-center space-y-2 pb-2">
+            <div className="flex justify-center">
+              <div className="w-16 h-16 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-600 shadow-inner">
+                <CheckCircle2 className="w-9 h-9" />
+              </div>
             </div>
             <div>
-              <CardTitle className="text-2xl font-bold tracking-tight">First-Time Setup</CardTitle>
-              <CardDescription className="mt-1">
-                Default credentials detected. Set your super admin credentials before proceeding.
+              <div className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-500/10 text-emerald-600 border border-emerald-500/20 mb-2">
+                <Sparkles className="w-3 h-3" /> Application Received
+              </div>
+              <CardTitle className="text-2xl font-bold tracking-tight">Access Request Submitted!</CardTitle>
+              <CardDescription className="text-xs max-w-md mx-auto mt-1">
+                Your request to join the TECHSHASTRA Admin Panel has been delivered to the Super Admin.
               </CardDescription>
             </div>
           </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSetup} className="space-y-4">
-              <div className="space-y-2">
-                <Label>Full Name</Label>
-                <Input value={setupName} onChange={e => setSetupName(e.target.value)}
-                  placeholder="Your full name" required autoComplete="off" />
-              </div>
-              <div className="space-y-2">
-                <Label>Mobile Number</Label>
-                <Input value={setupMobile} onChange={e => setSetupMobile(e.target.value)}
-                  placeholder="10-digit mobile" required autoComplete="off" />
-              </div>
-              <div className="space-y-2">
-                <Label>Date of Birth</Label>
-                <Input type="date" value={setupDob} onChange={e => setSetupDob(e.target.value)}
-                  required />
-              </div>
-              <div className="space-y-2">
-                <Label>Confirm — Re-type your name</Label>
-                <Input value={setupConfirm} onChange={e => setSetupConfirm(e.target.value)}
-                  placeholder="Type your name again to confirm" required autoComplete="off" />
-              </div>
-              <Button type="submit" className="w-full">Set Credentials & Continue</Button>
-            </form>
-            <p className="mt-4 text-xs text-muted-foreground text-center">
-              These replace the default credentials. Store them securely.
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
 
-  // Login form (also shown while checking)
-  if (authState === "login" || authState === "checking") {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-primary/5 p-4">
-        <Card className="w-full max-w-md border-primary/20">
-          <CardHeader className="text-center space-y-4">
-            <div className="mx-auto w-16 h-16 rounded-full bg-primary/10 flex items-center justify-center">
-              <ShieldCheck className="w-8 h-8 text-primary" />
+          <CardContent className="space-y-4 pt-2">
+            {/* Friendly Informative Notice */}
+            <div className="p-4 rounded-xl border border-emerald-500/20 bg-emerald-500/5 text-xs text-foreground space-y-2">
+              <p className="font-semibold text-emerald-700 dark:text-emerald-400 flex items-center gap-1.5 text-sm">
+                <Clock className="w-4 h-4" /> Next Steps:
+              </p>
+              <p className="text-muted-foreground leading-relaxed">
+                Approvals are reviewed manually by the Super Admin, so you do not need to wait on this screen.
+                Once approved, you will be able to access the admin account directly by signing in with your registered Name, Mobile, and Date of Birth.
+              </p>
             </div>
-            <div>
-              <CardTitle className="text-2xl font-bold tracking-tight">TECHSHASTRA Admin</CardTitle>
-              <CardDescription className="mt-1">Authorized personnel only.</CardDescription>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <form onSubmit={handleSignIn} className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="admin-name">Full Name</Label>
-                <Input id="admin-name" value={name} onChange={e => handleNameChange(e.target.value)}
-                  placeholder="Rahul Sharma (or paste Name,Mobile,DOB)" required disabled={authState === "checking"}
-                  autoComplete="off" />
-                <p className="text-[11px] text-muted-foreground">Tip: Pasting comma-separated credentials auto-fills all fields.</p>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="admin-mobile">Mobile Number</Label>
-                <Input id="admin-mobile" value={mobile} onChange={e => setMobile(e.target.value)}
-                  placeholder="Registered mobile" required disabled={authState === "checking"}
-                  autoComplete="off" />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="admin-dob">Date of Birth</Label>
-                <Input id="admin-dob" type="date" value={dob} onChange={e => setDob(e.target.value)}
-                  required disabled={authState === "checking"} />
-              </div>
-              <Button type="submit" className="w-full" disabled={loading || authState === "checking"}>
-                {(loading || authState === "checking") && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                {authState === "checking" ? "Verifying…" : "Access Admin Panel"}
-              </Button>
-            </form>
-            <div className="mt-6 flex items-center gap-2 text-xs text-muted-foreground">
-              <Lock className="w-3 h-3" />
-              <span>Session expires when you close the tab.</span>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
 
-  // Access Denied
-  if (authState === "denied") {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-destructive/5 p-4">
-        <Card className="w-full max-w-md border-destructive/30">
-          <CardHeader className="text-center space-y-4">
-            <div className="mx-auto w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center">
-              <AlertTriangle className="w-8 h-8 text-destructive" />
-            </div>
-            <div>
-              <CardTitle className="text-2xl font-bold text-destructive">Access Denied</CardTitle>
-              <CardDescription className="mt-2">
-                Invalid credentials. Contact the Super Admin if you need access.
-              </CardDescription>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <Button variant="outline" className="w-full"
-              onClick={() => { setAuthState("login"); setName(""); setMobile(""); setDob(""); }}>
-              Try Again
-            </Button>
-            <Button variant="ghost" className="w-full" onClick={() => navigate("/")}>
-              Return to Homepage
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  // Blocked
-  if (authState === "blocked") {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-destructive/5 p-4">
-        <Card className="w-full max-w-md border-destructive/30">
-          <CardHeader className="text-center space-y-4">
-            <div className="mx-auto w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center">
-              <Lock className="w-8 h-8 text-destructive" />
-            </div>
-            <div>
-              <CardTitle className="text-2xl font-bold text-destructive">Account Blocked</CardTitle>
-              <CardDescription className="mt-2">
-                {blockedName ? `${blockedName}, your` : "Your"} admin access has been revoked by the
-                Super Admin. Contact the President directly if you believe this is an error.
-              </CardDescription>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <Button variant="ghost" className="w-full" onClick={() => navigate("/")}>
-              Return to Homepage
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  // Awaiting Super Admin Confirmation (also used for new registrations)
-  if (authState === "awaiting_approval") {
-    const isNewReg = activeRequest?.isNewRegistration ?? false;
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-amber-500/5 p-4">
-        <Card className="w-full max-w-md border-amber-500/30 shadow-xl shadow-amber-500/5 animate-in fade-in zoom-in-95 duration-200">
-          <CardHeader className="text-center space-y-4">
-            <div className="relative mx-auto w-16 h-16 flex items-center justify-center">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-25"></span>
-              <div className="w-16 h-16 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center relative">
-                <ShieldAlert className="w-8 h-8 text-amber-500" />
+            {/* Reference Details */}
+            <div className="p-3 rounded-lg border border-border/80 bg-muted/30 space-y-1.5 text-xs">
+              <div className="flex justify-between items-center text-muted-foreground">
+                <span>Applicant:</span>
+                <span className="font-semibold text-foreground">{submittedRequest.name}</span>
               </div>
-            </div>
-            <div>
-              <CardTitle className="text-2xl font-bold tracking-tight">
-                {isNewReg ? "Admin Registration Request Sent" : "Super Admin Approval Required"}
-              </CardTitle>
-              <CardDescription className="mt-1">
-                {isNewReg
-                  ? "Your registration request has been sent to the Super Admin. You will be notified once approved."
-                  : "Credentials verified. Please wait while the Super Admin confirms your login."}
-              </CardDescription>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {isNewReg && (
-              <div className="p-3 rounded-lg border border-blue-500/20 bg-blue-500/5 text-xs text-blue-600 text-center">
-                🆕 New admin registration — Super Admin must approve to create your account.
+              <div className="flex justify-between items-center text-muted-foreground">
+                <span>Mobile:</span>
+                <span className="font-mono text-foreground">{submittedRequest.mobile}</span>
               </div>
-            )}
-            <div className="p-3.5 rounded-lg border border-amber-500/20 bg-amber-500/5 space-y-2.5 text-xs">
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">{isNewReg ? "Requested Name:" : "Admin Account:"}</span>
-                <span className="font-semibold text-foreground">{name.trim()}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Requested Role:</span>
-                <Badge variant="outline" className="text-[10px] bg-amber-500/10 text-amber-600 border-amber-500/30 font-medium">
-                  Admin
-                </Badge>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Device:</span>
-                <span className="text-muted-foreground font-mono">{activeRequest?.device || getClientDeviceString()}</span>
-              </div>
-              <div className="flex items-center justify-between pt-1 border-t border-amber-500/10">
-                <span className="text-muted-foreground">Live Status:</span>
-                <span className="flex items-center gap-1.5 text-amber-600 font-medium">
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                  Awaiting Super Admin Decision...
+              <div className="flex justify-between items-center text-muted-foreground">
+                <span>Request ID:</span>
+                <span className="font-mono text-foreground">
+                  #{submittedRequest.id.slice(-8).toUpperCase()}
                 </span>
               </div>
-              {activeRequest?.id && (
-                <div className="flex items-center justify-between text-[11px] text-muted-foreground/75">
-                  <span>Request ID:</span>
-                  <span className="font-mono">{activeRequest.id.slice(-8).toUpperCase()}</span>
-                </div>
-              )}
+              <div className="flex justify-between items-center text-muted-foreground">
+                <span>Status:</span>
+                <Badge variant="outline" className="text-[10px] bg-amber-500/10 text-amber-600 border-amber-500/30">
+                  Pending Review
+                </Badge>
+              </div>
             </div>
 
-            <p className="text-xs text-muted-foreground text-center px-2">
-              Keep this tab open. Once the Super Admin clicks <strong className="text-foreground">Approve</strong> on their dashboard, you will be {isNewReg ? "registered and " : ""}redirected automatically.
-            </p>
-
+            {/* Actions */}
             <div className="space-y-2 pt-2">
               <Button
-                variant="outline"
-                className="w-full gap-2 border-border/80 hover:bg-muted"
-                onClick={handleCancelRequest}
-              >
-                <XCircle className="w-4 h-4 text-muted-foreground" />
-                {isNewReg ? "Cancel Registration Request" : "Cancel Login Request"}
-              </Button>
-              <Button
-                variant="ghost"
-                className="w-full text-xs text-muted-foreground"
+                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white gap-2 font-medium"
                 onClick={() => navigate("/")}
               >
-                <ArrowLeft className="w-3.5 h-3.5 mr-1" />
-                Return to Homepage
+                Return to TechShastra Homepage
+              </Button>
+              <Button
+                variant="outline"
+                className="w-full gap-2 text-xs"
+                onClick={() => {
+                  setSubmittedRequest(null);
+                  setCountdown(null);
+                  setActiveTab("signin");
+                }}
+              >
+                Back to Admin Sign In
               </Button>
             </div>
+
+            {countdown !== null && (
+              <p className="text-[11px] text-muted-foreground text-center">
+                Automatically returning to homepage in {countdown}s...{" "}
+                <button
+                  onClick={() => setCountdown(null)}
+                  className="text-primary underline hover:text-primary/80"
+                >
+                  Stay here
+                </button>
+              </p>
+            )}
           </CardContent>
         </Card>
       </div>
     );
   }
 
-  // Access Request Rejected
-  if (authState === "request_rejected") {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-destructive/5 p-4">
-        <Card className="w-full max-w-md border-destructive/30 shadow-xl animate-in fade-in zoom-in-95 duration-200">
-          <CardHeader className="text-center space-y-4">
-            <div className="mx-auto w-16 h-16 rounded-full bg-destructive/10 flex items-center justify-center">
-              <XCircle className="w-8 h-8 text-destructive" />
+  // ── 5. RENDER MAIN AUTH TABS PORTAL ───────────────────────────────────────
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-primary/5 p-4">
+      <Card className="w-full max-w-md border-primary/20 shadow-xl shadow-primary/5 animate-in fade-in zoom-in-95 duration-200">
+        <CardHeader className="text-center space-y-1.5 pb-3">
+          <div className="flex justify-center">
+            <div className="w-12 h-12 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary shadow-inner">
+              <ShieldCheck className="w-6 h-6" />
             </div>
-            <div>
-              <CardTitle className="text-2xl font-bold text-destructive">Access Request Rejected</CardTitle>
-              <CardDescription className="mt-2">
-                The Super Admin declined your login request. Access to the admin dashboard has not been granted.
-              </CardDescription>
+          </div>
+          <CardTitle className="text-xl font-bold tracking-tight">TECHSHASTRA Admin Portal</CardTitle>
+          <CardDescription className="text-xs">
+            Sign in to access your administrative dashboard or request new admin clearance.
+          </CardDescription>
+        </CardHeader>
+
+        <CardContent>
+          {blockedAccount && (
+            <div className="mb-4 p-3 rounded-lg border border-destructive/30 bg-destructive/10 text-xs text-destructive space-y-1">
+              <p className="font-semibold flex items-center gap-1.5">
+                <XCircle className="w-4 h-4" /> Account Suspended
+              </p>
+              <p>
+                Access for <strong>{blockedAccount}</strong> has been suspended by the Super Admin. Please contact leadership to reactivate.
+              </p>
             </div>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <Button
-              variant="outline"
-              className="w-full"
-              onClick={() => {
-                setAuthState("login");
-                setName("");
-                setMobile("");
-                setDob("");
-                setCurrentRequestId(null);
-                setActiveRequest(null);
-              }}
+          )}
+
+          <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as AuthTab)} className="space-y-4">
+            <TabsList className="grid grid-cols-3 bg-muted/60 p-1 border border-border/60">
+              <TabsTrigger value="signin" className="text-xs gap-1.5">
+                <LogIn className="w-3.5 h-3.5" /> Sign In
+              </TabsTrigger>
+              <TabsTrigger value="register" className="text-xs gap-1.5">
+                <UserPlus className="w-3.5 h-3.5" /> Request Access
+              </TabsTrigger>
+              <TabsTrigger value="status" className="text-xs gap-1.5">
+                <Search className="w-3.5 h-3.5" /> Track Status
+              </TabsTrigger>
+            </TabsList>
+
+            {/* ── TAB 1: ADMIN SIGN IN ── */}
+            <TabsContent value="signin">
+              <form onSubmit={handleSignIn} className="space-y-3.5">
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Full Name</Label>
+                  <Input
+                    value={signInName}
+                    onChange={(e) => setSignInName(e.target.value)}
+                    placeholder="Registered Name"
+                    required
+                    autoFocus
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Mobile Number</Label>
+                  <Input
+                    value={signInMobile}
+                    onChange={(e) => setSignInMobile(e.target.value.replace(/[^0-9]/g, ""))}
+                    placeholder="10-digit Mobile"
+                    maxLength={10}
+                    required
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Date of Birth</Label>
+                  <Input
+                    type="date"
+                    value={signInDob}
+                    onChange={(e) => setSignInDob(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <Button type="submit" className="w-full gap-2 font-medium" disabled={loading}>
+                  {loading ? (
+                    <span className="flex items-center gap-2">
+                      <RefreshCw className="w-4 h-4 animate-spin" /> Verifying...
+                    </span>
+                  ) : (
+                    <>
+                      <Lock className="w-4 h-4" /> Sign In to Admin Panel
+                    </>
+                  )}
+                </Button>
+              </form>
+            </TabsContent>
+
+            {/* ── TAB 2: REQUEST ACCESS (REGISTRATION) ── */}
+            <TabsContent value="register">
+              <form onSubmit={handleRegisterSubmit} className="space-y-3">
+                <div className="p-2.5 rounded-lg border border-blue-500/20 bg-blue-500/5 text-xs text-muted-foreground">
+                  New member or lead? Fill in your details below. Once approved by the Super Admin, your account will be activated.
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Full Name</Label>
+                  <Input
+                    value={regName}
+                    onChange={(e) => setRegName(e.target.value)}
+                    placeholder="e.g. John Doe"
+                    required
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold">Mobile Number</Label>
+                    <Input
+                      value={regMobile}
+                      onChange={(e) => setRegMobile(e.target.value.replace(/[^0-9]/g, ""))}
+                      placeholder="10-digit number"
+                      maxLength={10}
+                      required
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <Label className="text-xs font-semibold">Date of Birth</Label>
+                    <Input
+                      type="date"
+                      value={regDob}
+                      onChange={(e) => setRegDob(e.target.value)}
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Email Address (Optional)</Label>
+                  <Input
+                    type="email"
+                    value={regEmail}
+                    onChange={(e) => setRegEmail(e.target.value)}
+                    placeholder="email@example.com"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Department / Club Role (Optional)</Label>
+                  <Input
+                    value={regDepartment}
+                    onChange={(e) => setRegDepartment(e.target.value)}
+                    placeholder="e.g. Technical Lead / Events Core"
+                  />
+                </div>
+
+                <Button
+                  type="submit"
+                  className="w-full bg-emerald-600 hover:bg-emerald-700 text-white gap-2 font-medium"
+                  disabled={loading}
+                >
+                  {loading ? (
+                    <span className="flex items-center gap-2">
+                      <RefreshCw className="w-4 h-4 animate-spin" /> Submitting Request...
+                    </span>
+                  ) : (
+                    <>
+                      <UserPlus className="w-4 h-4" /> Submit Access Request
+                    </>
+                  )}
+                </Button>
+              </form>
+            </TabsContent>
+
+            {/* ── TAB 3: TRACK REQUEST STATUS ── */}
+            <TabsContent value="status">
+              <form onSubmit={handleCheckStatus} className="space-y-3">
+                <div className="space-y-1">
+                  <Label className="text-xs font-semibold">Enter Registered Mobile</Label>
+                  <Input
+                    value={statusMobile}
+                    onChange={(e) => setStatusMobile(e.target.value.replace(/[^0-9]/g, ""))}
+                    placeholder="10-digit Mobile Number"
+                    maxLength={10}
+                    required
+                  />
+                </div>
+
+                <Button type="submit" variant="secondary" className="w-full gap-2 text-xs" disabled={loading}>
+                  {loading ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Search className="w-3.5 h-3.5" />}
+                  Check Request Status
+                </Button>
+
+                {statusResult && (
+                  <div className="p-3.5 rounded-lg border text-xs space-y-2 mt-3 animate-in fade-in duration-200">
+                    {statusResult.found ? (
+                      <>
+                        <div className="flex items-center justify-between">
+                          <span className="font-semibold">{statusResult.name}</span>
+                          {statusResult.status === "approved" && (
+                            <Badge className="bg-emerald-600 text-white text-[10px]">Approved ✓</Badge>
+                          )}
+                          {statusResult.status === "pending" && (
+                            <Badge variant="outline" className="text-amber-600 border-amber-500/30 bg-amber-500/10 text-[10px]">
+                              Under Review
+                            </Badge>
+                          )}
+                          {statusResult.status === "rejected" && (
+                            <Badge variant="destructive" className="text-[10px]">Declined</Badge>
+                          )}
+                        </div>
+
+                        {statusResult.status === "approved" && (
+                          <div className="space-y-2">
+                            <p className="text-muted-foreground">
+                              🎉 Your admin account is active! You can now sign in using your credentials.
+                            </p>
+                            <Button
+                              size="sm"
+                              className="w-full text-xs h-8"
+                              onClick={() => {
+                                setActiveTab("signin");
+                                setSignInMobile(statusMobile);
+                              }}
+                            >
+                              Go to Sign In
+                            </Button>
+                          </div>
+                        )}
+
+                        {statusResult.status === "pending" && (
+                          <p className="text-muted-foreground">
+                            ⏳ Your request is currently waiting for Super Admin review. Please check back later or await approval.
+                          </p>
+                        )}
+
+                        {statusResult.status === "rejected" && (
+                          <p className="text-destructive">
+                            Your access request was declined. Please speak with the Super Admin for details.
+                          </p>
+                        )}
+                      </>
+                    ) : (
+                      <p className="text-muted-foreground text-center">
+                        No request found for this mobile number. You can submit one in the "Request Access" tab.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </form>
+            </TabsContent>
+          </Tabs>
+
+          {/* Bottom Security / Navigation Footer */}
+          <div className="flex items-center justify-between pt-4 mt-4 border-t border-border/60 text-xs text-muted-foreground">
+            <Link to="/" className="hover:text-foreground transition-colors flex items-center gap-1">
+              <ArrowLeft className="w-3 h-3" /> TechShastra Home
+            </Link>
+
+            <Link
+              to="/superadmin"
+              className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-500 hover:underline font-medium"
             >
-              Try Again
-            </Button>
-            <Button variant="ghost" className="w-full" onClick={() => navigate("/")}>
-              Return to Homepage
-            </Button>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  return null;
-};
-
-export default Auth;
+              <Shield className="w-3.5 h-3.5" /> Super Admin Portal →
+            </Link>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}

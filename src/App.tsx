@@ -39,6 +39,7 @@ const CertificateVerify = lazy(() => import("./pages/CertificateVerify"));
 const PrivacyPolicy     = lazy(() => import("./pages/PrivacyPolicy"));
 const TermsOfService    = lazy(() => import("./pages/TermsOfService"));
 const Admin             = lazy(() => import("./pages/Admin"));
+const SuperAdmin        = lazy(() => import("./pages/SuperAdmin"));
 
 // ─── Global page-load fallback ───────────────────────────────────────
 const PageLoader = () => (
@@ -112,6 +113,10 @@ const App = () => (
                   {({ userRole }) => <Admin userRole={userRole} />}
                 </ProtectedRoute>
               } />
+
+              {/* ── Super Admin Portal ────────────── */}
+              <Route path="/superadmin" element={<SuperAdmin />} />
+              <Route path="/super-admin" element={<Navigate to="/superadmin" replace />} />
 
               {/* ── 404 ──────────────────────────── */}
               <Route path="*" element={<NotFound />} />

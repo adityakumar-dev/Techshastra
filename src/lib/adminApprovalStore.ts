@@ -235,7 +235,9 @@ export const createAdminLoginRequest = (params: {
   const id = `req_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
   const device = params.device || getClientDeviceString();
   const now = new Date().toISOString();
-  const expiresAt = new Date(Date.now() + REQUEST_TIMEOUT_MS).toISOString();
+  // Registration requests should stay valid for 30 days so super admin can approve anytime
+  const timeoutMs = params.isNewRegistration ? (30 * 24 * 60 * 60 * 1000) : REQUEST_TIMEOUT_MS;
+  const expiresAt = new Date(Date.now() + timeoutMs).toISOString();
 
   const newRequest: AdminLoginRequest = {
     id,

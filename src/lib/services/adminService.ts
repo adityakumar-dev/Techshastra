@@ -179,9 +179,6 @@ export const createAdminLoginRequestDB = async (
   return true;
 };
 
-/**
- * Fetch pending admin login requests from Supabase.
- */
 export const getPendingAdminLoginRequestsDB = async (): Promise<AdminLoginRequestDB[]> => {
   if (!isSupabaseConfigured()) return [];
 
@@ -189,7 +186,6 @@ export const getPendingAdminLoginRequestsDB = async (): Promise<AdminLoginReques
     .from('admin_login_requests')
     .select('*')
     .eq('status', 'pending')
-    .gt('expires_at', new Date().toISOString())
     .order('requested_at', { ascending: false });
 
   if (error) {
@@ -197,6 +193,55 @@ export const getPendingAdminLoginRequestsDB = async (): Promise<AdminLoginReques
     return [];
   }
   return data;
+};
+
+/**
+ * Check if there is an active pending registration request for a given mobile number.
+ */
+export const checkPendingRegistrationByMobileDB = async (
+  mobile: string
+): Promise<AdminLoginRequestDB | null> => {
+  if (!isSupabaseConfigured()) return null;
+  const clean = mobile.replace(/[^0-9]/g, '');
+  const last10 = clean.slice(-10);
+
+  const { data, error } = await supabase
+    .from('admin_login_requests')
+    .select('*')
+    .eq('status', 'pending')
+    .order('requested_at', { ascending: false });
+
+  if (error || !data) return null;
+  return (
+    data.find((r) => {
+      const rClean = r.mobile.replace(/[^0-9]/g, '');
+      return rClean === clean || (rClean.slice(-10) === last10 && last10.length === 10);
+    }) || null
+  );
+};
+
+/**
+ * Fetch the latest request status for a given mobile number (to let applicant check status).
+ */
+export const getRequestStatusByMobileDB = async (
+  mobile: string
+): Promise<AdminLoginRequestDB | null> => {
+  if (!isSupabaseConfigured()) return null;
+  const clean = mobile.replace(/[^0-9]/g, '');
+  const last10 = clean.slice(-10);
+
+  const { data, error } = await supabase
+    .from('admin_login_requests')
+    .select('*')
+    .order('requested_at', { ascending: false });
+
+  if (error || !data) return null;
+  return (
+    data.find((r) => {
+      const rClean = r.mobile.replace(/[^0-9]/g, '');
+      return rClean === clean || (rClean.slice(-10) === last10 && last10.length === 10);
+    }) || null
+  );
 };
 
 /**

@@ -130,11 +130,11 @@ const saveCredentials = (creds: AdminCredential[]): void => {
 // ─── AUTH ────────────────────────────────────────────────────────────
 
 // Normalization helpers for bulletproof login matching
-const cleanName = (n: string): string => n.toLowerCase().trim().replace(/\s+/g, ' ');
-const cleanMobile = (m: string): string => m.replace(/[^0-9]/g, '');
-const cleanDob = (d: string): string => d.trim().replace(/\//g, '-');
+export const cleanName = (n: string): string => n.toLowerCase().trim().replace(/\s+/g, ' ');
+export const cleanMobile = (m: string): string => m.replace(/[^0-9]/g, '');
+export const cleanDob = (d: string): string => d.trim().replace(/\//g, '-');
 
-const matchMobile = (m1: string, m2: string): boolean => {
+export const matchMobile = (m1: string, m2: string): boolean => {
   const c1 = cleanMobile(m1);
   const c2 = cleanMobile(m2);
   if (!c1 || !c2) return false;
@@ -148,6 +148,53 @@ export type VerifyResult =
   | { success: true;  role: AdminRole; id: string }
   | { success: false; blocked: true;  name: string }
   | { success: false; blocked: false };
+
+/** Verify login credentials for Super Admin portal exclusively */
+export const verifySuperAdmin = async (
+  name: string,
+  mobile: string,
+  dob: string
+): Promise<{ success: boolean; name?: string }> => {
+  const sName = cleanName(name);
+  const sMobile = cleanMobile(mobile);
+  const sDob = cleanDob(dob);
+
+  // 1. Check Supabase DB
+  try {
+    const dbAdmin = await getSuperAdminFromDB();
+    if (dbAdmin) {
+      if (
+        cleanName(dbAdmin.name) === sName &&
+        matchMobile(sMobile, dbAdmin.mobile) &&
+        cleanDob(dbAdmin.dob) === sDob
+      ) {
+        return { success: true, name: dbAdmin.name };
+      }
+      return { success: false };
+    }
+  } catch (_e) {}
+
+  // 2. Fallback to localStorage configured key
+  const localKey = localStorage.getItem(SUPER_ADMIN_KEY_STORAGE);
+  const defaultKey = generateCredKey(DEFAULT_SUPER_ADMIN.name, DEFAULT_SUPER_ADMIN.mobile, DEFAULT_SUPER_ADMIN.dob);
+  const targetKey = generateCredKey(name, mobile, dob);
+  if (localKey && localKey !== defaultKey && localKey === targetKey) {
+    return { success: true, name };
+  }
+
+  // 3. Fresh install default credentials (only if no custom super admin has ever been saved)
+  if (!localKey) {
+    if (
+      sName === cleanName(DEFAULT_SUPER_ADMIN.name) &&
+      matchMobile(sMobile, DEFAULT_SUPER_ADMIN.mobile) &&
+      sDob === cleanDob(DEFAULT_SUPER_ADMIN.dob)
+    ) {
+      return { success: true, name: DEFAULT_SUPER_ADMIN.name };
+    }
+  }
+
+  return { success: false };
+};
 
 /** Verify login credentials — with multi-format resilience and cross-tab credential support */
 export const verifyAdmin = (
@@ -174,12 +221,15 @@ export const verifyAdmin = (
 
   // 1. Check super admin
   const superKey = getSuperAdminKey();
-  const isSuper = (
-    targetKey === superKey ||
-    (cleanName(searchName) === cleanName(DEFAULT_SUPER_ADMIN.name) &&
-     matchMobile(searchMobile, DEFAULT_SUPER_ADMIN.mobile) &&
-     cleanDob(searchDob) === cleanDob(DEFAULT_SUPER_ADMIN.dob))
-  );
+  const defaultKey = generateCredKey(DEFAULT_SUPER_ADMIN.name, DEFAULT_SUPER_ADMIN.mobile, DEFAULT_SUPER_ADMIN.dob);
+  const isCustomSuperSet = superKey && superKey !== defaultKey;
+  const isSuper = isCustomSuperSet
+    ? targetKey === superKey
+    : (
+        cleanName(searchName) === cleanName(DEFAULT_SUPER_ADMIN.name) &&
+        matchMobile(searchMobile, DEFAULT_SUPER_ADMIN.mobile) &&
+        cleanDob(searchDob) === cleanDob(DEFAULT_SUPER_ADMIN.dob)
+      );
 
   if (isSuper) {
     return { success: true, role: "super_admin", id: "super_admin" };
