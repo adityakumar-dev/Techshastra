@@ -5,6 +5,7 @@ import {
   getAdminUsers,
   type AdminCredential,
   createAdminLoginRequest,
+  createAdminCredential,
   getClientDeviceString,
 } from "@/lib/adminStore";
 import {
@@ -12,6 +13,7 @@ import {
   logAdminAction,
   checkPendingRegistrationByMobileDB,
   getRequestStatusByMobileDB,
+  createAdminCredentialDB,
 } from "@/lib/services/adminService";
 import { supabase, isSupabaseConfigured } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -121,7 +123,7 @@ export default function Auth() {
       // Direct Supabase fallback
       if (!result.success && isSupabaseConfigured()) {
         try {
-          const { data: dbCreds } = await supabase.from("admin_credentials").select("*").limit(50);
+          const { data: dbCreds } = await supabase.from("admin_credentials").select("*");
           if (dbCreds && dbCreds.length > 0) {
             const mapped: AdminCredential[] = dbCreds.map((r: any) => ({
               id: r.id,
@@ -136,6 +138,52 @@ export default function Auth() {
             result = verifyAdmin(signInName.trim(), signInMobile.trim(), signInDob, mapped);
           }
         } catch (_dbErr) {}
+      }
+
+      // Self-healing fallback: If Super Admin clicked "Approve", check admin_login_requests
+      if (!result.success && isSupabaseConfigured()) {
+        try {
+          const sMobile = signInMobile.replace(/[^0-9]/g, "");
+          const sName = signInName.toLowerCase().trim();
+          const sDob = signInDob.trim().replace(/\//g, "-");
+
+          const { data: approvedList } = await supabase
+            .from("admin_login_requests")
+            .select("*")
+            .eq("status", "approved");
+
+          if (approvedList && approvedList.length > 0) {
+            const matched = approvedList.find((r) => {
+              const rMobile = r.mobile.replace(/[^0-9]/g, "");
+              const mMatch = rMobile === sMobile || (rMobile.slice(-10) === sMobile.slice(-10) && sMobile.length >= 10);
+              const nMatch = r.admin_name.toLowerCase().trim() === sName;
+              const dMatch = r.dob.trim().replace(/\//g, "-") === sDob;
+              return mMatch && nMatch && dMatch;
+            });
+
+            if (matched) {
+              // Create the missing credential row in admin_credentials in DB
+              const newRecord = await createAdminCredentialDB({
+                name: matched.admin_name,
+                mobile: matched.mobile,
+                dob: matched.dob,
+                role: "admin",
+                is_blocked: false,
+              }).catch(() => null);
+
+              // Also save locally
+              createAdminCredential(matched.admin_name, matched.mobile, matched.dob, "admin");
+
+              result = {
+                success: true,
+                role: "admin",
+                id: newRecord?.id || matched.admin_id,
+              };
+            }
+          }
+        } catch (_healingErr) {
+          console.warn("Self-healing login check encountered error:", _healingErr);
+        }
       }
 
       // Check result
@@ -671,17 +719,10 @@ export default function Auth() {
             </TabsContent>
           </Tabs>
 
-          {/* Bottom Security / Navigation Footer */}
-          <div className="flex items-center justify-between pt-4 mt-4 border-t border-border/60 text-xs text-muted-foreground">
-            <Link to="/" className="hover:text-foreground transition-colors flex items-center gap-1">
-              <ArrowLeft className="w-3 h-3" /> TechShastra Home
-            </Link>
-
-            <Link
-              to="/superadmin"
-              className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-500 hover:underline font-medium"
-            >
-              <Shield className="w-3.5 h-3.5" /> Super Admin Portal →
+          {/* Bottom Navigation Footer */}
+          <div className="flex items-center justify-center pt-4 mt-4 border-t border-border/60 text-xs text-muted-foreground">
+            <Link to="/" className="hover:text-foreground transition-colors flex items-center gap-1.5">
+              <ArrowLeft className="w-3.5 h-3.5" /> Return to TechShastra Home
             </Link>
           </div>
         </CardContent>

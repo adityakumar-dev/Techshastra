@@ -323,20 +323,28 @@ export default function SuperAdmin() {
   // ── 6. HANDLE APPROVE ADMIN REGISTRATION / LOGIN ─────────────────────────
   const handleApprove = async (request: AdminLoginRequest) => {
     try {
-      // 1. If it's a new registration, create the account in DB
-      if (request.isNewRegistration) {
-        try {
-          await createAdminCredentialDB({
-            name: request.adminName,
-            mobile: request.mobile,
-            dob: request.dob,
-            role: "admin",
-            is_blocked: false,
-          });
-        } catch (_dbErr) {
-          // Local fallback handled by adminStore
-        }
+      // 1. Always ensure admin account is provisioned in Supabase PostgreSQL
+      try {
+        await createAdminCredentialDB({
+          name: request.adminName.trim(),
+          mobile: request.mobile.trim(),
+          dob: request.dob.trim(),
+          role: "admin",
+          is_blocked: false,
+        });
+      } catch (dbErr) {
+        console.warn("createAdminCredentialDB in handleApprove:", dbErr);
       }
+
+      // Also persist to local credentials store
+      try {
+        createAdminCredential(
+          request.adminName.trim(),
+          request.mobile.trim(),
+          request.dob.trim(),
+          "admin"
+        );
+      } catch (_storeErr) {}
 
       // 2. Mark request approved in store and DB
       approveAdminLoginRequest(request.id, superAdminName);

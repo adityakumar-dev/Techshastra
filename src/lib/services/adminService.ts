@@ -18,14 +18,35 @@ export const createAdminCredentialDB = async (
 ): Promise<AdminCredentialDB | null> => {
   if (!isSupabaseConfigured()) return null;
 
+  // Clean payload: Ensure id is a valid UUID or let PostgreSQL generate one
+  const payload = { ...cred };
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (payload.id && !uuidRegex.test(payload.id)) {
+    delete (payload as any).id;
+  }
+
   const { data, error } = await supabase
     .from('admin_credentials')
-    .insert(cred)
+    .insert(payload)
     .select()
-    .single();
+    .maybeSingle();
 
   if (error) {
-    console.error('Failed to insert admin credential in Supabase:', error);
+    console.warn('Failed to insert admin credential, trying update fallback:', error);
+    // If mobile already existed or conflicted, update it
+    const { data: updated, error: updateErr } = await supabase
+      .from('admin_credentials')
+      .update({
+        name: payload.name,
+        dob: payload.dob,
+        role: payload.role || 'admin',
+        is_blocked: false,
+      })
+      .eq('mobile', payload.mobile)
+      .select()
+      .maybeSingle();
+
+    if (!updateErr && updated) return updated;
     throw error;
   }
   return data;
