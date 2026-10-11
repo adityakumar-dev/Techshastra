@@ -2919,9 +2919,12 @@ const Admin = ({ userRole }: AdminProps) => {
                             <p className="text-muted-foreground">No admin users configured yet.</p>
                           </div>
                         ) : (
-                          adminUsers.map(user => (
+                          adminUsers.map(user => {
+                            const displayName = (user as any).full_name || user.name || (user.id ? user.id.slice(0, 8) : "Admin");
+                            const userId = user.id || (user as any).user_id || "";
+                            return (
                             <div
-                              key={user.user_id}
+                              key={userId || user.mobile}
                               className={`flex items-center justify-between p-4 rounded-lg border ${user.is_blocked ? "border-destructive/30 bg-destructive/5" : "border-border hover:bg-muted/50"
                                 } transition-colors`}
                             >
@@ -2938,7 +2941,7 @@ const Admin = ({ userRole }: AdminProps) => {
                                 </div>
                                 <div>
                                   <div className="flex items-center gap-2">
-                                    <p className="font-medium text-sm">{user.full_name || user.user_id.slice(0, 8)}</p>
+                                    <p className="font-medium text-sm">{displayName}</p>
                                     <Badge variant={user.role === "super_admin" ? "default" : "secondary"} className="text-[10px]">
                                       {user.role === "super_admin" ? "⭐ Super" : "Admin"}
                                     </Badge>
@@ -2946,6 +2949,7 @@ const Admin = ({ userRole }: AdminProps) => {
                                       <Badge variant="destructive" className="text-[10px]">BLOCKED</Badge>
                                     )}
                                   </div>
+                                  <p className="text-[11px] text-muted-foreground mt-0.5">📱 {user.mobile}</p>
                                   {user.block_reason && (
                                     <p className="text-[11px] text-destructive mt-0.5">Reason: {user.block_reason}</p>
                                   )}
@@ -2959,7 +2963,7 @@ const Admin = ({ userRole }: AdminProps) => {
                                     <Button
                                       variant="outline"
                                       size="sm"
-                                      onClick={() => handleUnblockAdmin(user.user_id, user.full_name)}
+                                      onClick={() => handleUnblockAdmin(userId, displayName)}
                                       className="gap-1 text-xs"
                                     >
                                       <UserCheck className="w-3 h-3" /> Unblock
@@ -2968,7 +2972,7 @@ const Admin = ({ userRole }: AdminProps) => {
                                     <Button
                                       variant="outline"
                                       size="sm"
-                                      onClick={() => handleBlockAdmin(user.user_id, user.full_name)}
+                                      onClick={() => handleBlockAdmin(userId, displayName)}
                                       className="gap-1 text-xs text-orange-600 border-orange-600/30 hover:bg-orange-600/10"
                                     >
                                       <Ban className="w-3 h-3" /> Block
@@ -2977,7 +2981,7 @@ const Admin = ({ userRole }: AdminProps) => {
                                   <Button
                                     variant="ghost"
                                     size="sm"
-                                    onClick={() => handleRemoveAdmin(user.user_id, user.full_name)}
+                                    onClick={() => handleRemoveAdmin(userId, displayName)}
                                     className="gap-1 text-xs text-destructive hover:bg-destructive/10"
                                   >
                                     <UserX className="w-3 h-3" /> Remove
@@ -2985,7 +2989,8 @@ const Admin = ({ userRole }: AdminProps) => {
                                 </div>
                               )}
                             </div>
-                          ))
+                          );
+                        })
                         )}
                       </div>
                     )}
