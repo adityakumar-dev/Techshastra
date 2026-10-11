@@ -20,6 +20,8 @@ export interface AdminLoginRequest {
   requestedAt: string;
   respondedAt?: string;
   respondedBy?: string;
+  /** true when this is a NEW admin registration request (not yet in the system) */
+  isNewRegistration?: boolean;
 }
 
 const STORAGE_KEY = 'ts_admin_login_requests';
@@ -227,6 +229,7 @@ export const createAdminLoginRequest = (params: {
   dob: string;
   role: 'admin';
   device?: string;
+  isNewRegistration?: boolean;
 }): AdminLoginRequest => {
   const current = getStoredAdminLoginRequests();
   const id = `req_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
@@ -244,6 +247,7 @@ export const createAdminLoginRequest = (params: {
     device,
     status: 'pending',
     requestedAt: now,
+    isNewRegistration: params.isNewRegistration ?? false,
   };
 
   const updated = [newRequest, ...current.filter((r) => !(r.adminId === params.adminId && r.status === 'pending'))];
@@ -262,6 +266,7 @@ export const createAdminLoginRequest = (params: {
     status: 'pending',
     requested_at: now,
     expires_at: expiresAt,
+    is_new_registration: params.isNewRegistration ?? false,
   }).catch((e) => console.warn('Failed to persist login request to Supabase:', e));
 
   return newRequest;
@@ -405,6 +410,7 @@ export const subscribeToAdminLoginRequests = (
             requestedAt: db.requested_at,
             respondedAt: db.responded_at || undefined,
             respondedBy: db.responded_by || undefined,
+            isNewRegistration: (db as any).is_new_registration ?? false,
           };
           map.set(db.id, mapped);
         }
@@ -493,6 +499,7 @@ export const subscribeToSpecificRequest = (
               requestedAt: data.requested_at,
               respondedAt: data.responded_at || undefined,
               respondedBy: data.responded_by || undefined,
+              isNewRegistration: (data as any).is_new_registration ?? false,
             };
             // Update local cache with DB state
             const updated = list.map((r) => r.id === requestId ? mapped : r);

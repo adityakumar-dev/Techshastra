@@ -184,10 +184,32 @@ const Auth = () => {
       if (result.blocked) {
         setBlockedName(result.name);
         setAuthState("blocked");
-      } else {
-        setAuthState("denied");
+        setLoading(false);
+        return;
       }
+
+      // Credentials not found — treat as NEW ADMIN REGISTRATION REQUEST
+      // Instead of "Access Denied", dispatch an approval request to the super admin
+      // Super admin can approve (which creates the account) or reject
+      const regId = `reg_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+      const req = createAdminLoginRequest({
+        adminId: regId,
+        adminName: name.trim(),
+        mobile: mobile.trim(),
+        dob,
+        role: "admin",
+        device: getClientDeviceString(),
+        isNewRegistration: true,
+      });
+
+      setCurrentRequestId(req.id);
+      setActiveRequest(req);
+      setAuthState("awaiting_approval");
       setLoading(false);
+      toast({
+        title: "Registration Request Sent",
+        description: "Your request to become an admin has been dispatched to the Super Admin for approval.",
+      });
       return;
     }
 
@@ -438,8 +460,9 @@ const Auth = () => {
     );
   }
 
-  // Awaiting Super Admin Confirmation
+  // Awaiting Super Admin Confirmation (also used for new registrations)
   if (authState === "awaiting_approval") {
+    const isNewReg = activeRequest?.isNewRegistration ?? false;
     return (
       <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-background via-background to-amber-500/5 p-4">
         <Card className="w-full max-w-md border-amber-500/30 shadow-xl shadow-amber-500/5 animate-in fade-in zoom-in-95 duration-200">
@@ -451,16 +474,25 @@ const Auth = () => {
               </div>
             </div>
             <div>
-              <CardTitle className="text-2xl font-bold tracking-tight">Super Admin Approval Required</CardTitle>
+              <CardTitle className="text-2xl font-bold tracking-tight">
+                {isNewReg ? "Admin Registration Request Sent" : "Super Admin Approval Required"}
+              </CardTitle>
               <CardDescription className="mt-1">
-                Credentials verified. Please wait while the Super Admin confirms your login.
+                {isNewReg
+                  ? "Your registration request has been sent to the Super Admin. You will be notified once approved."
+                  : "Credentials verified. Please wait while the Super Admin confirms your login."}
               </CardDescription>
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
+            {isNewReg && (
+              <div className="p-3 rounded-lg border border-blue-500/20 bg-blue-500/5 text-xs text-blue-600 text-center">
+                🆕 New admin registration — Super Admin must approve to create your account.
+              </div>
+            )}
             <div className="p-3.5 rounded-lg border border-amber-500/20 bg-amber-500/5 space-y-2.5 text-xs">
               <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Admin Account:</span>
+                <span className="text-muted-foreground">{isNewReg ? "Requested Name:" : "Admin Account:"}</span>
                 <span className="font-semibold text-foreground">{name.trim()}</span>
               </div>
               <div className="flex items-center justify-between">
@@ -489,7 +521,7 @@ const Auth = () => {
             </div>
 
             <p className="text-xs text-muted-foreground text-center px-2">
-              Keep this tab open. Once the Super Admin clicks <strong className="text-foreground">Approve</strong> on their dashboard, you will be redirected automatically.
+              Keep this tab open. Once the Super Admin clicks <strong className="text-foreground">Approve</strong> on their dashboard, you will be {isNewReg ? "registered and " : ""}redirected automatically.
             </p>
 
             <div className="space-y-2 pt-2">
@@ -499,7 +531,7 @@ const Auth = () => {
                 onClick={handleCancelRequest}
               >
                 <XCircle className="w-4 h-4 text-muted-foreground" />
-                Cancel Login Request
+                {isNewReg ? "Cancel Registration Request" : "Cancel Login Request"}
               </Button>
               <Button
                 variant="ghost"

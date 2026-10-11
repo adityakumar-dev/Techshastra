@@ -16,8 +16,12 @@ CREATE TABLE IF NOT EXISTS admin_login_requests (
     responded_at TIMESTAMPTZ,
     responded_by TEXT,
     expires_at TIMESTAMPTZ NOT NULL DEFAULT (NOW() + INTERVAL '15 minutes'),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    is_new_registration BOOLEAN NOT NULL DEFAULT FALSE
 );
+
+-- Ensure column exists if table was previously created
+ALTER TABLE admin_login_requests ADD COLUMN IF NOT EXISTS is_new_registration BOOLEAN NOT NULL DEFAULT FALSE;
 
 -- Index for fast status queries
 CREATE INDEX IF NOT EXISTS idx_admin_login_requests_status ON admin_login_requests (status, requested_at DESC);

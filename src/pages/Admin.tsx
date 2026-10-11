@@ -104,11 +104,18 @@ const ChangeSuperAdminCard = ({
     if (name.trim().toLowerCase() !== confirm.trim().toLowerCase()) {
       toast({ title: "Name confirmation doesn't match", variant: "destructive" }); return;
     }
-    setSuperAdminCredentials(name.trim(), mobile.trim(), dob);
-    addLogEntry({ actor, action: "Changed super admin credentials", type: "create_credential", revertible: false });
-    toast({ title: "Super admin credentials updated ✓", description: "Use your new Name + Mobile + DOB to log in next time." });
-    setName(""); setMobile(""); setDob(""); setConfirm(""); setOpen(false);
-    onChanged();
+    setSuperAdminCredentials(name.trim(), mobile.trim(), dob).then(() => {
+      addLogEntry({ actor, action: "Changed super admin credentials", type: "create_credential", revertible: false });
+      toast({ title: "Super admin credentials updated ✓", description: "Use your new Name + Mobile + DOB to log in next time." });
+      setName(""); setMobile(""); setDob(""); setConfirm(""); setOpen(false);
+      onChanged();
+    }).catch(() => {
+      // Still update locally even if Supabase sync fails
+      addLogEntry({ actor, action: "Changed super admin credentials", type: "create_credential", revertible: false });
+      toast({ title: "Super admin credentials updated ✓", description: "Use your new Name + Mobile + DOB to log in next time." });
+      setName(""); setMobile(""); setDob(""); setConfirm(""); setOpen(false);
+      onChanged();
+    });
   };
 
   return (
@@ -309,13 +316,33 @@ const Admin = ({ userRole }: AdminProps) => {
   }, [isSuperAdmin]);
 
   const handleApproveAdminLogin = (requestId: string) => {
+    const req = allRequests.find((r) => r.id === requestId);
     const updated = approveAdminLoginRequest(requestId, currentUserName);
     if (updated) {
-      toast({
-        title: "Access Confirmed ✓",
-        description: `Approved login for ${updated.adminName}.`,
-      });
-      trackAction(`Approved admin login: ${updated.adminName}`);
+      // If this was a NEW registration request, create the admin credential now
+      if (req?.isNewRegistration) {
+        try {
+          createAdminCredential(
+            updated.adminName,
+            updated.mobile,
+            updated.dob,
+            "admin"
+          );
+        } catch (_e) {
+          console.warn("Failed to auto-create admin credential on approval:", _e);
+        }
+        toast({
+          title: "Admin Registered ✓",
+          description: `${updated.adminName} has been registered as an admin and their session is now active.`,
+        });
+        trackAction(`Registered new admin: ${updated.adminName}`);
+      } else {
+        toast({
+          title: "Access Confirmed ✓",
+          description: `Approved login for ${updated.adminName}.`,
+        });
+        trackAction(`Approved admin login: ${updated.adminName}`);
+      }
     }
   };
 
@@ -1210,13 +1237,17 @@ const Admin = ({ userRole }: AdminProps) => {
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <h3 className="font-semibold text-sm sm:text-base">Admin Login Confirmation Required</h3>
+                    <h3 className="font-semibold text-sm sm:text-base">
+                      {pendingRequests.some(r => r.isNewRegistration) ? "Admin Access Request" : "Admin Login Confirmation Required"}
+                    </h3>
                     <Badge variant="outline" className="text-amber-600 border-amber-500/50 bg-amber-500/10 text-[11px]">
                       {pendingRequests.length} pending
                     </Badge>
                   </div>
                   <p className="text-xs text-muted-foreground mt-0.5">
-                    An admin has entered valid credentials and is waiting for your authorization to access the panel.
+                    {pendingRequests.some(r => r.isNewRegistration)
+                      ? "Someone is requesting admin access. Approve to create their account, or reject to deny."
+                      : "An admin has entered valid credentials and is waiting for your authorization to access the panel."}
                   </p>
                 </div>
               </div>
@@ -1224,6 +1255,7 @@ const Admin = ({ userRole }: AdminProps) => {
                 {pendingRequests.slice(0, 2).map((req) => (
                   <div key={req.id} className="flex items-center gap-2 bg-background/90 p-1.5 px-3 rounded-lg border border-amber-500/30 text-xs shadow-sm">
                     <span className="font-medium text-foreground">{req.adminName}</span>
+                    {req.isNewRegistration && <Badge className="text-[9px] h-4 px-1.5 bg-blue-500/20 text-blue-600 border-blue-500/30" variant="outline">NEW</Badge>}
                     <span className="text-[10px] text-muted-foreground hidden lg:inline">({req.device})</span>
                     <Button
                       size="sm"
@@ -2543,9 +2575,15 @@ const Admin = ({ userRole }: AdminProps) => {
                               <div className="space-y-1">
                                 <div className="flex items-center gap-2">
                                   <span className="font-semibold text-sm">{req.adminName}</span>
-                                  <Badge variant="outline" className="text-[10px] bg-amber-500/10 text-amber-600 border-amber-500/30 font-medium">
-                                    Admin
-                                  </Badge>
+                                  {req.isNewRegistration ? (
+                                    <Badge variant="outline" className="text-[10px] bg-blue-500/10 text-blue-600 border-blue-500/30 font-medium">
+                                      New Registration
+                                    </Badge>
+                                  ) : (
+                                    <Badge variant="outline" className="text-[10px] bg-amber-500/10 text-amber-600 border-amber-500/30 font-medium">
+                                      Admin Login
+                                    </Badge>
+                                  )}
                                   <span className="text-[10px] text-muted-foreground font-mono">
                                     ID: {req.id.slice(-8).toUpperCase()}
                                   </span>
@@ -2562,7 +2600,7 @@ const Admin = ({ userRole }: AdminProps) => {
                                   className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5"
                                   onClick={() => handleApproveAdminLogin(req.id)}
                                 >
-                                  <Check className="w-4 h-4" /> Approve & Grant Access
+                                  <Check className="w-4 h-4" /> {req.isNewRegistration ? "Approve & Register" : "Approve & Grant Access"}
                                 </Button>
                                 <Button
                                   size="sm"

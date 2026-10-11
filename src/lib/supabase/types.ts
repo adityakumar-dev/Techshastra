@@ -212,6 +212,7 @@ export interface Database {
           responded_by: string | null;
           expires_at: string;
           created_at: string;
+          is_new_registration: boolean;
         };
         Insert: {
           id: string;
@@ -227,6 +228,7 @@ export interface Database {
           responded_by?: string | null;
           expires_at?: string;
           created_at?: string;
+          is_new_registration?: boolean;
         };
         Update: Partial<Database['public']['Tables']['admin_login_requests']['Insert']>;
       };

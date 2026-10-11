@@ -159,9 +159,18 @@ export const createAdminLoginRequestDB = async (
 ): Promise<boolean> => {
   if (!isSupabaseConfigured()) return false;
 
-  const { error } = await supabase
+  let { error } = await supabase
     .from('admin_login_requests')
     .upsert(req, { onConflict: 'id' });
+
+  // If column is_new_registration doesn't exist yet in DB schema, retry without it
+  if (error && (error.message?.includes('is_new_registration') || (error as any).code === 'PGRST204' || (error as any).code === '42703')) {
+    const { is_new_registration: _, ...fallbackReq } = req as any;
+    const retry = await supabase
+      .from('admin_login_requests')
+      .upsert(fallbackReq, { onConflict: 'id' });
+    error = retry.error;
+  }
 
   if (error) {
     console.error('Failed to create admin login request in Supabase:', error);
