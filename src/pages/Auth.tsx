@@ -101,6 +101,7 @@ export default function Auth() {
   }, [countdown, navigate]);
 
   // ── 1. HANDLE SIGN IN ─────────────────────────────────────────────────────
+  // ── 1. HANDLE SIGN IN ─────────────────────────────────────────────────────
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!signInName.trim() || !signInMobile.trim() || !signInDob) {
@@ -112,131 +113,143 @@ export default function Auth() {
     setBlockedAccount(null);
 
     try {
-      // 1. Sync credentials from Supabase
-      let remoteCreds: AdminCredential[] = [];
-      try {
-        remoteCreds = await getAdminUsers();
-      } catch (_e) {}
+      const sName = signInName.trim();
+      const sMobile = signInMobile.replace(/[^0-9]/g, "");
+      const sDob = signInDob.trim().replace(/\//g, "-");
 
-      let result = verifyAdmin(signInName.trim(), signInMobile.trim(), signInDob, remoteCreds);
+      // 1. Authoritative check from Supabase PostgreSQL admin_credentials
+      let dbRecord: AdminCredential | null = null;
+      if (isSupabaseConfigured()) {
+        const { data: dbRows, error: dbErr } = await supabase
+          .from("admin_credentials")
+          .select("*");
 
-      // Direct Supabase fallback
-      if (!result.success && isSupabaseConfigured()) {
-        try {
-          const { data: dbCreds } = await supabase.from("admin_credentials").select("*");
-          if (dbCreds && dbCreds.length > 0) {
-            const mapped: AdminCredential[] = dbCreds.map((r: any) => ({
-              id: r.id,
-              name: r.name,
-              mobile: r.mobile,
-              dob: r.dob,
-              email: r.email || undefined,
-              role: r.role as any,
-              is_blocked: r.is_blocked,
-              created_at: r.created_at,
-            }));
-            result = verifyAdmin(signInName.trim(), signInMobile.trim(), signInDob, mapped);
+        if (!dbErr && dbRows && dbRows.length > 0) {
+          const match = dbRows.find((r: any) => {
+            const rMobile = r.mobile.replace(/[^0-9]/g, "");
+            const mMatch = rMobile === sMobile || (rMobile.slice(-10) === sMobile.slice(-10) && sMobile.length >= 10);
+            const nMatch = r.name.toLowerCase().trim() === sName.toLowerCase().trim();
+            const dMatch = r.dob.trim().replace(/\//g, "-") === sDob;
+            return mMatch && nMatch && dMatch;
+          });
+
+          if (match) {
+            dbRecord = {
+              id: match.id,
+              name: match.name,
+              mobile: match.mobile,
+              dob: match.dob,
+              email: match.email || undefined,
+              role: match.role as any,
+              is_blocked: match.is_blocked,
+              blocked_at: match.blocked_at || undefined,
+              block_reason: match.block_reason || undefined,
+              created_at: match.created_at,
+            };
           }
-        } catch (_dbErr) {}
-      }
-
-      // Self-healing fallback: If Super Admin clicked "Approve", check admin_login_requests
-      if (!result.success && isSupabaseConfigured()) {
-        try {
-          const sMobile = signInMobile.replace(/[^0-9]/g, "");
-          const sName = signInName.toLowerCase().trim();
-          const sDob = signInDob.trim().replace(/\//g, "-");
-
-          const { data: approvedList } = await supabase
-            .from("admin_login_requests")
-            .select("*")
-            .eq("status", "approved");
-
-          if (approvedList && approvedList.length > 0) {
-            const matched = approvedList.find((r) => {
-              const rMobile = r.mobile.replace(/[^0-9]/g, "");
-              const mMatch = rMobile === sMobile || (rMobile.slice(-10) === sMobile.slice(-10) && sMobile.length >= 10);
-              const nMatch = r.admin_name.toLowerCase().trim() === sName;
-              const dMatch = r.dob.trim().replace(/\//g, "-") === sDob;
-              return mMatch && nMatch && dMatch;
-            });
-
-            if (matched) {
-              // Create the missing credential row in admin_credentials in DB
-              const newRecord = await createAdminCredentialDB({
-                name: matched.admin_name,
-                mobile: matched.mobile,
-                dob: matched.dob,
-                role: "admin",
-                is_blocked: false,
-              }).catch(() => null);
-
-              // Also save locally
-              createAdminCredential(matched.admin_name, matched.mobile, matched.dob, "admin");
-
-              result = {
-                success: true,
-                role: "admin",
-                id: newRecord?.id || matched.admin_id,
-              };
-            }
-          }
-        } catch (_healingErr) {
-          console.warn("Self-healing login check encountered error:", _healingErr);
         }
       }
 
-      // Check result
-      if (result.success) {
-        // Successful login!
+      // 2. Fallback to local synced credentials if Supabase was unreachable
+      if (!dbRecord) {
+        const localCreds = await getAdminUsers().catch(() => []);
+        const localMatch = localCreds.find((c) => {
+          const cMobile = c.mobile.replace(/[^0-9]/g, "");
+          const mMatch = cMobile === sMobile || (cMobile.slice(-10) === sMobile.slice(-10) && sMobile.length >= 10);
+          const nMatch = c.name.toLowerCase().trim() === sName.toLowerCase().trim();
+          const dMatch = c.dob.trim().replace(/\//g, "-") === sDob;
+          return mMatch && nMatch && dMatch;
+        });
+        if (localMatch) {
+          dbRecord = localMatch;
+        }
+      }
+
+      // ── CRITICAL SECURITY CHECK 1: ACCOUNT SUSPENDED / BLOCKED ──
+      if (dbRecord && dbRecord.is_blocked) {
+        setBlockedAccount(dbRecord.name || sName);
+        setLoading(false);
+        toast({
+          title: "Account Suspended ⛔",
+          description: `Access for ${dbRecord.name} has been suspended by the Super Admin.`,
+          variant: "destructive",
+        });
+        return;
+      }
+
+      // ── SUCCESS: ACTIVE ADMIN FOUND ──
+      if (dbRecord && !dbRecord.is_blocked) {
         sessionStorage.setItem(
           "ts_admin_session",
           JSON.stringify({
-            userId: result.id,
-            role: result.role,
-            name: signInName.trim(),
+            userId: dbRecord.id,
+            role: dbRecord.role || "admin",
+            name: dbRecord.name,
             authenticated_at: new Date().toISOString(),
           })
         );
 
-        await registerAdminSession(signInName.trim(), result.id, null).catch(() => {});
+        await registerAdminSession(dbRecord.name, dbRecord.id, null).catch(() => {});
         logAdminAction(
-          result.id,
-          signInName.trim(),
-          result.role,
+          dbRecord.id,
+          dbRecord.name,
+          dbRecord.role,
           "Logged into admin panel",
           "admin_sessions"
         ).catch(() => {});
 
         toast({
           title: "Welcome Back! ✓",
-          description: `Successfully signed in as ${signInName.trim()}.`,
+          description: `Successfully signed in as ${dbRecord.name}.`,
         });
 
         navigate("/admin", { replace: true });
         return;
       }
 
-      // Account is blocked
-      if (result.blocked) {
-        setBlockedAccount(result.name || signInName.trim());
-        setLoading(false);
+      // ── SUPER ADMIN SIGN IN VIA /admin ──
+      const superAdminResult = await verifySuperAdmin(sName, sMobile, sDob);
+      if (superAdminResult.success) {
+        const activeName = superAdminResult.name || sName;
+        sessionStorage.setItem(
+          "ts_admin_session",
+          JSON.stringify({
+            userId: "super_admin",
+            role: "super_admin",
+            name: activeName,
+            authenticated_at: new Date().toISOString(),
+          })
+        );
+        await registerAdminSession(activeName, null, "super_admin").catch(() => {});
+        toast({
+          title: "Super Admin Authenticated",
+          description: `Welcome, ${activeName}.`,
+        });
+        navigate("/admin", { replace: true });
         return;
       }
 
-      // Not found — Check if a pending registration request exists
-      const pendingReq = await checkPendingRegistrationByMobileDB(signInMobile.trim());
+      // ── NOT FOUND IN ADMIN CREDENTIALS — Check requests for status info ──
+      const pendingReq = await checkPendingRegistrationByMobileDB(sMobile);
       if (pendingReq) {
-        toast({
-          title: "Registration Pending Review",
-          description: `Your access request submitted on ${new Date(
-            pendingReq.requested_at
-          ).toLocaleDateString()} is waiting for Super Admin approval.`,
-        });
+        if (pendingReq.status === "rejected") {
+          toast({
+            title: "Access Declined",
+            description: "Your admin registration request was declined by the Super Admin.",
+            variant: "destructive",
+          });
+        } else {
+          toast({
+            title: "Registration Pending Review",
+            description: `Your access request submitted on ${new Date(
+              pendingReq.requested_at
+            ).toLocaleDateString()} is waiting for Super Admin review.`,
+          });
+        }
       } else {
         toast({
           title: "Account Not Found",
-          description: "No admin account matches these credentials. If you are new, please use the 'Request Admin Access' tab.",
+          description: "No active admin account matches these credentials. If you are new, please submit a request in 'Request Access'.",
           variant: "destructive",
         });
       }

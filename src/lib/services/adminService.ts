@@ -73,19 +73,36 @@ export const getAdminCredentialsDB = async (): Promise<AdminCredentialDB[]> => {
 /**
  * Delete an admin credential from PostgreSQL.
  */
-export const deleteAdminCredentialDB = async (id: string): Promise<boolean> => {
+export const deleteAdminCredentialDB = async (
+  id: string,
+  mobile?: string
+): Promise<boolean> => {
   if (!isSupabaseConfigured()) return false;
 
-  const { error } = await supabase
-    .from('admin_credentials')
-    .delete()
-    .eq('id', id);
+  try {
+    // 1. Delete from admin_credentials
+    let query = supabase.from('admin_credentials').delete();
+    if (mobile) {
+      query = query.or(`id.eq.${id},mobile.eq.${mobile}`);
+    } else {
+      query = query.eq('id', id);
+    }
+    await query;
 
-  if (error) {
+    // 2. Also purge any matching requests from admin_login_requests so they cannot be reused
+    if (mobile) {
+      await supabase
+        .from('admin_login_requests')
+        .delete()
+        .eq('mobile', mobile)
+        .catch(() => {});
+    }
+
+    return true;
+  } catch (error) {
     console.error('Failed to delete admin credential in Supabase:', error);
-    throw error;
+    return false;
   }
-  return true;
 };
 
 /**
@@ -94,20 +111,48 @@ export const deleteAdminCredentialDB = async (id: string): Promise<boolean> => {
 export const setAdminCredentialBlockDB = async (
   id: string,
   isBlocked: boolean,
-  reason?: string
+  reason?: string,
+  mobile?: string
 ): Promise<boolean> => {
   if (!isSupabaseConfigured()) return false;
 
-  const { error } = await supabase
-    .from('admin_credentials')
-    .update({
-      is_blocked: isBlocked,
-      blocked_at: isBlocked ? new Date().toISOString() : null,
-      block_reason: isBlocked ? (reason || 'Blocked by Super Admin') : null,
-    })
-    .eq('id', id);
+  const updateData = {
+    is_blocked: isBlocked,
+    blocked_at: isBlocked ? new Date().toISOString() : null,
+    block_reason: isBlocked ? (reason || 'Blocked by Super Admin') : null,
+  };
 
-  return !error;
+  try {
+    let query = supabase.from('admin_credentials').update(updateData);
+    if (mobile) {
+      query = query.or(`id.eq.${id},mobile.eq.${mobile}`);
+    } else {
+      query = query.eq('id', id);
+    }
+    await query;
+
+    // Fallback: update by mobile directly to ensure no id mismatch
+    if (mobile) {
+      await supabase
+        .from('admin_credentials')
+        .update(updateData)
+        .eq('mobile', mobile);
+
+      // If blocked, also update any approved requests in admin_login_requests
+      if (isBlocked) {
+        await supabase
+          .from('admin_login_requests')
+          .update({ status: 'rejected' })
+          .eq('mobile', mobile)
+          .catch(() => {});
+      }
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Failed to update admin block status in Supabase:', error);
+    return false;
+  }
 };
 
 // ─── SUPER ADMIN GLOBAL STATE (Server-Backed) ─────────────────────────

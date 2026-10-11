@@ -403,11 +403,23 @@ export default function SuperAdmin() {
   const handleToggleBlock = async (user: AdminCredential) => {
     const newStatus = !user.is_blocked;
     try {
-      await setAdminCredentialBlockDB(user.id, newStatus);
+      await setAdminCredentialBlockDB(user.id, newStatus, undefined, user.mobile);
       if (newStatus) {
         blockAdmin(user.id, "Suspended by Super Admin");
+        addLogEntry({
+          actor: superAdminName,
+          action: `Suspended admin account: ${user.name} (${user.mobile})`,
+          type: "create_credential",
+          revertible: false,
+        });
       } else {
         unblockAdmin(user.id);
+        addLogEntry({
+          actor: superAdminName,
+          action: `Reactivated admin account: ${user.name} (${user.mobile})`,
+          type: "create_credential",
+          revertible: false,
+        });
       }
       toast({
         title: newStatus ? `Admin Suspended` : `Admin Reactivated`,
@@ -424,8 +436,14 @@ export default function SuperAdmin() {
       return;
     }
     try {
-      await deleteAdminCredentialDB(user.id);
+      await deleteAdminCredentialDB(user.id, user.mobile);
       deleteAdminCredential(user.id);
+      addLogEntry({
+        actor: superAdminName,
+        action: `Permanently deleted admin account: ${user.name} (${user.mobile})`,
+        type: "delete_credential",
+        revertible: false,
+      });
       toast({
         title: "Admin Removed",
         description: `${user.name} has been removed from admins.`,

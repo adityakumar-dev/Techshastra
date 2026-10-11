@@ -276,24 +276,7 @@ export const isUserBlocked = async (userId: string): Promise<boolean> => {
 export const getAdminUsers = async (): Promise<AdminCredential[]> => {
   try {
     const remote = await getAdminCredentialsDB();
-    const local = getCredentials();
-
-    // Auto-sync any credentials created locally earlier that are not yet in Supabase
-    for (const c of local) {
-      if (!remote.some((r) => r.id === c.id || (cleanName(r.name) === cleanName(c.name) && matchMobile(r.mobile, c.mobile)))) {
-        createAdminCredentialDB({
-          id: c.id,
-          name: c.name,
-          mobile: c.mobile,
-          dob: c.dob,
-          email: c.email || null,
-          role: c.role,
-          is_blocked: c.is_blocked,
-        }).catch(() => {});
-      }
-    }
-
-    if (remote && remote.length > 0) {
+    if (remote && remote.length >= 0) {
       const mapped: AdminCredential[] = remote.map((r) => ({
         id: r.id,
         name: r.name,
@@ -306,13 +289,9 @@ export const getAdminUsers = async (): Promise<AdminCredential[]> => {
         block_reason: r.block_reason || undefined,
         created_at: r.created_at,
       }));
-      // Merge with any local credentials
-      const map = new Map<string, AdminCredential>();
-      for (const c of local) map.set(c.id, c);
-      for (const m of mapped) map.set(m.id, m);
-      const merged = Array.from(map.values());
-      saveCredentials(merged);
-      return merged;
+      // Overwrite local credentials cache with authoritative DB state
+      saveCredentials(mapped);
+      return mapped;
     }
   } catch (_e) {}
   return getCredentials();
@@ -358,6 +337,9 @@ export const createAdminCredential = (
 
 export const blockAdmin = (userId: string, reason?: string): void => {
   const creds = getCredentials();
+  const target = creds.find(c => c.id === userId);
+  const mobile = target?.mobile;
+
   const index = creds.findIndex(c => c.id === userId);
   if (index !== -1) {
     creds[index].is_blocked = true;
@@ -365,13 +347,16 @@ export const blockAdmin = (userId: string, reason?: string): void => {
     creds[index].block_reason = reason;
     saveCredentials(creds);
   }
-  setAdminCredentialBlockDB(userId, true, reason).catch((e) =>
+  setAdminCredentialBlockDB(userId, true, reason, mobile).catch((e) =>
     console.warn("Failed to block admin in Supabase:", e)
   );
 };
 
 export const unblockAdmin = (userId: string): void => {
   const creds = getCredentials();
+  const target = creds.find(c => c.id === userId);
+  const mobile = target?.mobile;
+
   const index = creds.findIndex(c => c.id === userId);
   if (index !== -1) {
     creds[index].is_blocked = false;
@@ -379,14 +364,18 @@ export const unblockAdmin = (userId: string): void => {
     creds[index].block_reason = undefined;
     saveCredentials(creds);
   }
-  setAdminCredentialBlockDB(userId, false).catch((e) =>
+  setAdminCredentialBlockDB(userId, false, undefined, mobile).catch((e) =>
     console.warn("Failed to unblock admin in Supabase:", e)
   );
 };
 
 export const deleteAdminCredential = (userId: string): void => {
-  saveCredentials(getCredentials().filter(c => c.id !== userId));
-  deleteAdminCredentialDB(userId).catch((e) =>
+  const creds = getCredentials();
+  const target = creds.find(c => c.id === userId);
+  const mobile = target?.mobile;
+
+  saveCredentials(getCredentials().filter(c => c.id !== userId && (!mobile || c.mobile !== mobile)));
+  deleteAdminCredentialDB(userId, mobile).catch((e) =>
     console.warn("Failed to delete admin in Supabase:", e)
   );
 };
