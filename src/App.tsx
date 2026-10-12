@@ -41,6 +41,15 @@ const TermsOfService    = lazy(() => import("./pages/TermsOfService"));
 const Admin             = lazy(() => import("./pages/Admin"));
 const SuperAdmin        = lazy(() => import("./pages/SuperAdmin"));
 
+// ─── Student Learning Hub (Lazy) ──────────────────────────────────
+const StudentLayout   = lazy(() => import("./components/student/StudentLayout"));
+const StudentDashboard = lazy(() => import("./pages/student/StudentDashboard"));
+const ProblemsList    = lazy(() => import("./pages/student/ProblemsList"));
+const ProblemSolve    = lazy(() => import("./pages/student/ProblemSolve"));
+const CodePlayground  = lazy(() => import("./pages/student/CodePlayground"));
+const LeaderboardPage = lazy(() => import("./pages/student/LeaderboardPage"));
+const TypingTestPage  = lazy(() => import("./pages/student/TypingTestPage"));
+
 // ─── Global page-load fallback ───────────────────────────────────────
 const PageLoader = () => (
   <div className="min-h-screen flex items-center justify-center bg-background">
@@ -97,6 +106,47 @@ const App = () => (
               <Route path="/publications"  element={<PageGuard path="/publications"><Publications /></PageGuard>} />
 
               {/* ── Student-protected ────────────── */}
+              <Route path="/student" element={
+                <ProtectedStudentRoute>
+                  <Navigate to="/student/problems" replace />
+                </ProtectedStudentRoute>
+              } />
+              <Route path="/student/problems" element={
+                <ProtectedStudentRoute>
+                  <StudentLayout title="Faculty Assignments & Problems" subtitle="Curated algorithmic challenges">
+                    <ProblemsList />
+                  </StudentLayout>
+                </ProtectedStudentRoute>
+              } />
+              <Route path="/student/problems/:id" element={
+                <ProtectedStudentRoute>
+                  <StudentLayout hideHeader>
+                    <ProblemSolve />
+                  </StudentLayout>
+                </ProtectedStudentRoute>
+              } />
+              <Route path="/student/compiler" element={
+                <ProtectedStudentRoute>
+                  <StudentLayout hideHeader>
+                    <CodePlayground />
+                  </StudentLayout>
+                </ProtectedStudentRoute>
+              } />
+              <Route path="/student/leaderboard" element={
+                <ProtectedStudentRoute>
+                  <StudentLayout title="Campus Leaderboard" subtitle="Inter-college rankings across UTU institutions">
+                    <LeaderboardPage />
+                  </StudentLayout>
+                </ProtectedStudentRoute>
+              } />
+              <Route path="/student/typing" element={
+                <ProtectedStudentRoute>
+                  <StudentLayout title="Typing Speed Arena" subtitle="Improve developer keyboard proficiency and accuracy">
+                    <TypingTestPage />
+                  </StudentLayout>
+                </ProtectedStudentRoute>
+              } />
+
               <Route path="/members" element={
                 <ProtectedStudentRoute><Members /></ProtectedStudentRoute>
               } />

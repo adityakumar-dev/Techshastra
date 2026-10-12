@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Menu, X, LogOut } from "lucide-react";
+import { Menu, X, LogOut, Code2 } from "lucide-react";
 import { Link } from "react-router-dom";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { motion, AnimatePresence } from "framer-motion";
@@ -90,6 +90,13 @@ const Navbar = () => {
             <ThemeToggle />
             {studentSession ? (
               <>
+                <Link
+                  to="/student"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-primary/10 text-primary border border-primary/25 hover:bg-primary hover:text-primary-foreground text-xs font-medium tracking-wide transition-all shadow-sm shadow-primary/10"
+                >
+                  <Code2 size={13} />
+                  <span>Coding Hub</span>
+                </Link>
                 <Link to="/members"
                   className="text-sm font-light tracking-wider text-foreground/70 hover:text-foreground transition-colors duration-300">
                   Members
@@ -198,6 +205,12 @@ const Navbar = () => {
                 >
                   {studentSession ? (
                     <>
+                      <Link to="/student" onClick={() => setIsMobileMenuOpen(false)}>
+                        <Button size="lg" className="w-full rounded-full font-medium tracking-wide bg-primary text-primary-foreground gap-2 shadow-lg shadow-primary/20">
+                          <Code2 size={16} />
+                          Coding & Learning Hub
+                        </Button>
+                      </Link>
                       <Link to="/members" onClick={() => setIsMobileMenuOpen(false)}>
                         <Button size="lg" variant="outline" className="w-full rounded-full font-light tracking-widest">
                           Members Directory

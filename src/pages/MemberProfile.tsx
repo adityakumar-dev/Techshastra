@@ -225,6 +225,7 @@ const MemberProfile = () => {
   const [status, setStatus] = useState<LoadStatus>("loading");
   const [repoFilter, setRepoFilter] = useState<"top" | "all" | "starred">("top");
 
+
   const isOwn = session?.githubUsername?.toLowerCase() === username?.toLowerCase();
   const profileUrl = `${window.location.origin}/members/${username}`;
 
@@ -379,8 +380,6 @@ const MemberProfile = () => {
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
-
-
       <div className="container mx-auto px-4 py-24 max-w-6xl">
 
         {/* ── HERO ─────────────────────────────────────────────────────── */}

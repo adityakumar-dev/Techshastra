@@ -62,7 +62,9 @@ import {
   History,
   Settings,
   Sparkles,
+  Code2,
 } from "lucide-react";
+import AdminProblemsTab from "@/components/admin/AdminProblemsTab";
 
 type SuperAdminViewState = "initializing" | "setup" | "login" | "dashboard";
 
@@ -763,6 +765,10 @@ export default function SuperAdmin() {
               <History className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Audit </span>Logs
             </TabsTrigger>
+            <TabsTrigger value="problems" className="gap-1.5 sm:gap-2 text-xs shrink-0">
+              <Code2 className="w-3.5 h-3.5" />
+              <span>Problems & Tasks</span>
+            </TabsTrigger>
           </TabsList>
 
           {/* ── TAB 1: ADMIN ACCESS REQUESTS ── */}
@@ -996,6 +1002,11 @@ export default function SuperAdmin() {
                 )}
               </CardContent>
             </Card>
+          </TabsContent>
+
+          {/* ── TAB 4: PROBLEMS & TASKS MANAGEMENT ── */}
+          <TabsContent value="problems" className="space-y-4">
+            <AdminProblemsTab currentAdminName={superAdminName || "Super Admin"} isSuperAdmin={true} />
           </TabsContent>
         </Tabs>
       </main>
