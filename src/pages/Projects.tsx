@@ -99,13 +99,13 @@ const Projects = () => {
                     </div>
                   </div>
 
-                  <CardContent className="p-8 space-y-6">
-                    <h3 className="text-xl font-heading font-light tracking-wide">{project.title}</h3>
-                    <p className="text-sm font-light text-foreground/50 line-clamp-2 italic">
+                  <CardContent className="p-5 sm:p-8 space-y-4 sm:space-y-6">
+                    <h3 className="text-lg sm:text-xl font-heading font-light tracking-wide">{project.title}</h3>
+                    <p className="text-xs sm:text-sm font-light text-foreground/50 line-clamp-2 italic">
                       {project.description}
                     </p>
 
-                    <div className="grid grid-cols-2 gap-4 py-4 border-y border-foreground/5">
+                    <div className="grid grid-cols-2 gap-4 py-3 sm:py-4 border-y border-foreground/5">
                       <div>
                         <p className="text-[10px] uppercase tracking-[0.2em] text-foreground/30 mb-1">Status</p>
                         <p className="text-xs font-light text-foreground/70 uppercase">{project.status}</p>
@@ -126,10 +126,10 @@ const Projects = () => {
                     </div>
 
                     {/* Action Buttons */}
-                    <div className="flex gap-3 pt-2">
+                    <div className="flex gap-2 sm:gap-3 pt-2">
                       <Button
                         variant="outline"
-                        className="flex-1 glass border-0 rounded-full h-12 hover:bg-primary/5 transition-all duration-300"
+                        className="flex-1 glass border-0 rounded-full h-11 sm:h-12 hover:bg-primary/5 transition-all duration-300"
                         asChild
                       >
                         <a href={project.github_url || "#"} target="_blank" rel="noopener noreferrer">
@@ -139,7 +139,7 @@ const Projects = () => {
                       </Button>
 
                       <Link to={`/projects/${project.id}/live`} className="flex-1">
-                        <Button className="w-full bg-primary text-primary-foreground rounded-full h-12 shadow-lg hover:shadow-primary/20 transition-all duration-500">
+                        <Button className="w-full bg-primary text-primary-foreground rounded-full h-11 sm:h-12 shadow-lg hover:shadow-primary/20 transition-all duration-500">
                           <Play className="w-4 h-4 mr-2" />
                           <span className="text-[10px] uppercase tracking-widest">Details</span>
                         </Button>
@@ -152,15 +152,15 @@ const Projects = () => {
           )}
 
           {/* CTA */}
-          <div className="mt-24 text-center">
-            <div className="glass p-12 rounded-[3rem] border-0 space-y-6 max-w-4xl mx-auto">
-              <h3 className="text-3xl font-heading font-light tracking-tight italic">Have a Project Idea?</h3>
-              <p className="text-foreground/50 max-w-2xl mx-auto font-light leading-relaxed">
+          <div className="mt-16 sm:mt-24 text-center">
+            <div className="glass p-6 sm:p-12 rounded-2xl sm:rounded-[3rem] border-0 space-y-4 sm:space-y-6 max-w-4xl mx-auto">
+              <h3 className="text-2xl sm:text-3xl font-heading font-light tracking-tight italic">Have a Project Idea?</h3>
+              <p className="text-sm sm:text-base text-foreground/50 max-w-2xl mx-auto font-light leading-relaxed">
                 Join TECHSHASTRA and bring your innovative ideas to life with our community of creators and mentors.
               </p>
               <Button
                 size="lg"
-                className="bg-primary text-primary-foreground rounded-full px-12 py-7 mt-4 shadow-2xl hover:scale-105 transition-all duration-500"
+                className="w-full sm:w-auto bg-primary text-primary-foreground rounded-full px-8 sm:px-12 py-5 sm:py-7 mt-2 sm:mt-4 shadow-2xl hover:scale-105 transition-all duration-500"
                 asChild
               >
                 <Link to="/join">

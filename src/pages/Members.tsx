@@ -200,15 +200,15 @@ const Members = () => {
 
         {/* Interest filters */}
         {allInterests.length > 0 && (
-          <div className="flex flex-wrap gap-2 mb-10">
+          <div className="flex overflow-x-auto no-scrollbar scroll-smooth sm:flex-wrap gap-2 mb-8 sm:mb-10 py-1">
             <button
               onClick={() => setFilterInterest(null)}
-              className={`px-4 py-1.5 rounded-full text-[10px] uppercase tracking-widest font-light transition-all duration-300 ${!filterInterest ? "bg-primary text-primary-foreground" : "glass text-foreground/50 hover:text-foreground"}`}>
+              className={`shrink-0 px-4 py-1.5 rounded-full text-[10px] uppercase tracking-widest font-light transition-all duration-300 ${!filterInterest ? "bg-primary text-primary-foreground" : "glass text-foreground/50 hover:text-foreground"}`}>
               All
             </button>
             {allInterests.map((i) => (
               <button key={i} onClick={() => setFilterInterest(filterInterest === i ? null : i)}
-                className={`px-4 py-1.5 rounded-full text-[10px] uppercase tracking-widest font-light transition-all duration-300 ${filterInterest === i ? "bg-primary text-primary-foreground" : "glass text-foreground/50 hover:text-foreground"}`}>
+                className={`shrink-0 px-4 py-1.5 rounded-full text-[10px] uppercase tracking-widest font-light transition-all duration-300 ${filterInterest === i ? "bg-primary text-primary-foreground" : "glass text-foreground/50 hover:text-foreground"}`}>
                 {i}
               </button>
             ))}

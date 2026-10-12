@@ -95,13 +95,13 @@ const Contact = () => {
               </Card>
             ) : (
               <Card className="border-0 shadow-xl shadow-primary/5 rounded-3xl overflow-hidden">
-                <CardHeader className="bg-primary/5 pb-8">
+                <CardHeader className="bg-primary/5 p-6 sm:p-8 pb-6 sm:pb-8">
                   <CardTitle>Send a Message</CardTitle>
                   <CardDescription>Fill out the form below and we'll get back to you as soon as possible.</CardDescription>
                 </CardHeader>
-                <CardContent className="p-8">
-                  <form onSubmit={handleSubmit} className="space-y-6">
-                    <div className="grid grid-cols-2 gap-4">
+                <CardContent className="p-5 sm:p-8">
+                  <form onSubmit={handleSubmit} className="space-y-5 sm:space-y-6">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <Label htmlFor="name">Full Name</Label>
                         <Input
@@ -145,7 +145,7 @@ const Contact = () => {
                         onChange={(e) => setFormData(prev => ({ ...prev, message: e.target.value }))}
                       />
                     </div>
-                    <Button type="submit" className="w-full h-12 text-lg font-bold shadow-lg shadow-primary/20" disabled={loading}>
+                    <Button type="submit" className="w-full h-12 text-base sm:text-lg font-bold shadow-lg shadow-primary/20" disabled={loading}>
                       {loading ? "Sending..." : (
                         <span className="flex items-center gap-2">
                           <Send className="w-5 h-5" /> Send Message
@@ -160,7 +160,7 @@ const Contact = () => {
 
           {/* Quick Info */}
           <div className="lg:col-span-2 space-y-6">
-            <Card className="glass rounded-3xl border-0 p-8 space-y-8 h-full">
+            <Card className="glass rounded-3xl border-0 p-5 sm:p-8 space-y-6 sm:space-y-8 h-full">
               <div className="space-y-6">
                 <h3 className="text-xl font-heading font-light tracking-wider">Office Details</h3>
                 <div className="flex gap-4">

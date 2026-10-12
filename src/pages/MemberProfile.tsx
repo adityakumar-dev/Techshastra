@@ -462,14 +462,14 @@ const MemberProfile = () => {
           </div>
 
           {/* Actions */}
-          <motion.div variants={fadeUp} className="flex flex-col gap-2.5 flex-shrink-0 min-w-[140px]">
+          <motion.div variants={fadeUp} className="grid grid-cols-2 sm:grid-cols-3 md:flex md:flex-col gap-2 w-full md:w-auto flex-shrink-0 min-w-[140px]">
             {isOwn && (
               <>
-                <Button size="sm" variant="outline" className="rounded-full gap-2 justify-start"
+                <Button size="sm" variant="outline" className="rounded-full gap-2 justify-center md:justify-start text-xs"
                   onClick={() => navigate(`/members/${username}/edit`)}>
                   <Edit3 size={13} /> Edit Profile
                 </Button>
-                <Button size="sm" variant="outline" className="rounded-full gap-2 justify-start"
+                <Button size="sm" variant="outline" className="rounded-full gap-2 justify-center md:justify-start text-xs"
                   title="Re-sync skills, bio and experience from your latest GitHub data"
                   onClick={async () => {
                     if (!username || !student || !ghUser) return;
@@ -499,19 +499,19 @@ const MemberProfile = () => {
                       toast({ title: "Refresh failed", description: "GitHub may be rate-limited.", variant: "destructive" });
                     }
                   }}>
-                  <RefreshCw size={13} /> Sync from GitHub
+                  <RefreshCw size={13} /> Sync GitHub
                 </Button>
-                <Button size="sm" variant="outline" className="rounded-full gap-2 justify-start" onClick={() => previewResume(student, ghUser, repos, langMap)}>
-                  <Eye size={13} /> Preview Resume
+                <Button size="sm" variant="outline" className="rounded-full gap-2 justify-center md:justify-start text-xs" onClick={() => previewResume(student, ghUser, repos, langMap)}>
+                  <Eye size={13} /> Resume
                 </Button>
-                <Button size="sm" variant="outline" className="rounded-full gap-2 justify-start" onClick={() => openResumePrintWindow(student, ghUser, repos, langMap)}>
-                  <Printer size={13} /> Print / Save PDF
+                <Button size="sm" variant="outline" className="rounded-full gap-2 justify-center md:justify-start text-xs" onClick={() => openResumePrintWindow(student, ghUser, repos, langMap)}>
+                  <Printer size={13} /> Print PDF
                 </Button>
-                <Button size="sm" variant="outline" className="rounded-full gap-2 justify-start"
+                <Button size="sm" variant="outline" className="rounded-full gap-2 justify-center md:justify-start text-xs"
                   onClick={() => downloadLatex(student, ghUser, repos, langMap)}>
-                  <FileText size={13} /> LaTeX Resume
+                  <FileText size={13} /> LaTeX
                 </Button>
-                <Button size="sm" variant="ghost" className="rounded-full gap-2 justify-start text-foreground/50"
+                <Button size="sm" variant="ghost" className="rounded-full gap-2 justify-center md:justify-start text-xs text-foreground/50"
                   onClick={() => { logout(); navigate("/join"); }}>
                   <LogOut size={13} /> Sign Out
                 </Button>
@@ -522,7 +522,7 @@ const MemberProfile = () => {
 
         {/* ── STATS ROW ────────────────────────────────────────────────── */}
         <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}
-          className="flex flex-wrap gap-3 mb-10">
+          className="grid grid-cols-2 sm:grid-cols-3 md:flex md:flex-wrap gap-2.5 sm:gap-3 mb-8 sm:mb-10">
           <StatPill label="Repos" value={originalRepos} />
           <StatPill label="Stars" value={totalStars} />
           <StatPill label="Followers" value={ghUser?.followers ?? 0} />

@@ -1210,17 +1210,17 @@ const Admin = ({ userRole }: AdminProps) => {
       <Navbar />
 
       <main className="container mx-auto px-4 py-24">
-        <div className="mb-8 flex items-center justify-between">
+        <div className="mb-6 sm:mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <div className="flex items-center gap-3 mb-2">
-              <h1 className="text-4xl font-bold">Admin Dashboard</h1>
-              <Badge variant={isSuperAdmin ? "default" : "secondary"} className="text-xs">
+            <div className="flex items-center gap-2.5 sm:gap-3 mb-1.5">
+              <h1 className="text-2xl sm:text-4xl font-bold">Admin Dashboard</h1>
+              <Badge variant={isSuperAdmin ? "default" : "secondary"} className="text-[10px] sm:text-xs">
                 {isSuperAdmin ? "⭐ Super Admin" : "Admin"}
               </Badge>
             </div>
-            <p className="text-muted-foreground">Manage your tech club content and settings</p>
+            <p className="text-xs sm:text-sm text-muted-foreground">Manage your tech club content and settings</p>
           </div>
-          <Button variant="outline" onClick={handleSignOut} className="gap-2">
+          <Button variant="outline" size="sm" onClick={handleSignOut} className="gap-2 self-start sm:self-auto h-9">
             <LogOut className="w-4 h-4" />
             Sign Out
           </Button>
@@ -1229,14 +1229,14 @@ const Admin = ({ userRole }: AdminProps) => {
         {/* ── Top Floating Pending Requests Banner for Super Admin ── */}
         {isSuperAdmin && pendingRequests.length > 0 && (
           <div className="mb-6 p-4 rounded-xl border border-amber-500/40 bg-amber-500/10 shadow-lg backdrop-blur animate-in fade-in slide-in-from-top-3 duration-300">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
               <div className="flex items-start sm:items-center gap-3">
                 <div className="relative flex h-3.5 w-3.5 mt-1 sm:mt-0">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
                   <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-amber-500"></span>
                 </div>
                 <div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <h3 className="font-semibold text-sm sm:text-base">
                       {pendingRequests.some(r => r.isNewRegistration) ? "Admin Access Request" : "Admin Login Confirmation Required"}
                     </h3>
@@ -1290,22 +1290,22 @@ const Admin = ({ userRole }: AdminProps) => {
         )}
 
         <Tabs defaultValue="overview" className="space-y-6" onValueChange={setActiveTab}>
-          <TabsList className="flex flex-wrap w-full h-auto bg-muted/50 p-1 gap-1">
-            <TabsTrigger value="overview"><LayoutDashboard className="w-4 h-4 mr-2" />Overview</TabsTrigger>
-            <TabsTrigger value="projects"><FileText className="w-4 h-4 mr-2 hidden sm:inline" />Projects</TabsTrigger>
-            <TabsTrigger value="events"><Calendar className="w-4 h-4 mr-2 hidden sm:inline" />Events</TabsTrigger>
-            <TabsTrigger value="blog"><Newspaper className="w-4 h-4 mr-2 hidden sm:inline" />Blog</TabsTrigger>
-            <TabsTrigger value="gallery"><Image className="w-4 h-4 mr-2 hidden sm:inline" />Gallery</TabsTrigger>
-            <TabsTrigger value="socials"><Hash className="w-4 h-4 mr-2 hidden sm:inline" />Socials</TabsTrigger>
-            <TabsTrigger value="publications"><Book className="w-4 h-4 mr-2 hidden sm:inline" />Research</TabsTrigger>
-            <TabsTrigger value="awards"><Trophy className="w-4 h-4 mr-2 hidden sm:inline" />Awards</TabsTrigger>
-            <TabsTrigger value="faq"><HelpCircle className="w-4 h-4 mr-2 hidden sm:inline" />FAQ</TabsTrigger>
-            <TabsTrigger value="messages"><MessageSquare className="w-4 h-4 mr-2 hidden sm:inline" />Messages</TabsTrigger>
-            <TabsTrigger value="certificates"><Award className="w-4 h-4 mr-2 hidden sm:inline" />Certs</TabsTrigger>
-            <TabsTrigger value="students"><Users className="w-4 h-4 mr-2 hidden sm:inline" />Students</TabsTrigger>
+          <TabsList className="w-full flex overflow-x-auto no-scrollbar scroll-smooth md:flex-wrap h-auto bg-muted/50 p-1.5 gap-1.5 rounded-2xl border border-border/50">
+            <TabsTrigger value="overview" className="shrink-0 text-xs py-2 px-3 rounded-xl"><LayoutDashboard className="w-3.5 h-3.5 mr-1.5" />Overview</TabsTrigger>
+            <TabsTrigger value="projects" className="shrink-0 text-xs py-2 px-3 rounded-xl"><FileText className="w-3.5 h-3.5 mr-1.5 hidden sm:inline" />Projects</TabsTrigger>
+            <TabsTrigger value="events" className="shrink-0 text-xs py-2 px-3 rounded-xl"><Calendar className="w-3.5 h-3.5 mr-1.5 hidden sm:inline" />Events</TabsTrigger>
+            <TabsTrigger value="blog" className="shrink-0 text-xs py-2 px-3 rounded-xl"><Newspaper className="w-3.5 h-3.5 mr-1.5 hidden sm:inline" />Blog</TabsTrigger>
+            <TabsTrigger value="gallery" className="shrink-0 text-xs py-2 px-3 rounded-xl"><Image className="w-3.5 h-3.5 mr-1.5 hidden sm:inline" />Gallery</TabsTrigger>
+            <TabsTrigger value="socials" className="shrink-0 text-xs py-2 px-3 rounded-xl"><Hash className="w-3.5 h-3.5 mr-1.5 hidden sm:inline" />Socials</TabsTrigger>
+            <TabsTrigger value="publications" className="shrink-0 text-xs py-2 px-3 rounded-xl"><Book className="w-3.5 h-3.5 mr-1.5 hidden sm:inline" />Research</TabsTrigger>
+            <TabsTrigger value="awards" className="shrink-0 text-xs py-2 px-3 rounded-xl"><Trophy className="w-3.5 h-3.5 mr-1.5 hidden sm:inline" />Awards</TabsTrigger>
+            <TabsTrigger value="faq" className="shrink-0 text-xs py-2 px-3 rounded-xl"><HelpCircle className="w-3.5 h-3.5 mr-1.5 hidden sm:inline" />FAQ</TabsTrigger>
+            <TabsTrigger value="messages" className="shrink-0 text-xs py-2 px-3 rounded-xl"><MessageSquare className="w-3.5 h-3.5 mr-1.5 hidden sm:inline" />Messages</TabsTrigger>
+            <TabsTrigger value="certificates" className="shrink-0 text-xs py-2 px-3 rounded-xl"><Award className="w-3.5 h-3.5 mr-1.5 hidden sm:inline" />Certs</TabsTrigger>
+            <TabsTrigger value="students" className="shrink-0 text-xs py-2 px-3 rounded-xl"><Users className="w-3.5 h-3.5 mr-1.5 hidden sm:inline" />Students</TabsTrigger>
             {isSuperAdmin && (
-              <TabsTrigger value="super-admin" className="bg-primary/10 text-primary relative">
-                <ShieldCheck className="w-4 h-4 mr-2" />Super Admin
+              <TabsTrigger value="super-admin" className="shrink-0 text-xs py-2 px-3 rounded-xl bg-primary/10 text-primary relative">
+                <ShieldCheck className="w-3.5 h-3.5 mr-1.5" />Super Admin
                 {pendingRequests.length > 0 && (
                   <span className="ml-1.5 px-1.5 py-0.2 text-[10px] rounded-full bg-amber-500 text-white font-semibold">
                     {pendingRequests.length}

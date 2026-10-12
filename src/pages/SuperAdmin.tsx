@@ -662,33 +662,35 @@ export default function SuperAdmin() {
     <div className="min-h-screen bg-background">
       {/* Top Super Admin Executive Header */}
       <header className="sticky top-0 z-50 border-b border-border/80 bg-background/95 backdrop-blur-md">
-        <div className="container mx-auto px-4 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-500">
-              <ShieldCheck className="w-5 h-5" />
+        <div className="container mx-auto px-4 h-16 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-500 shrink-0">
+              <ShieldCheck className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="font-bold text-base leading-tight">Super Admin Command Center</h1>
-                <Badge className="bg-amber-500/15 text-amber-600 border-amber-500/30 text-[10px]" variant="outline">
-                  Clearance Level 5
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                <h1 className="font-bold text-xs sm:text-base leading-tight truncate">
+                  Super Admin <span className="hidden sm:inline">Command Center</span>
+                </h1>
+                <Badge className="bg-amber-500/15 text-amber-600 border-amber-500/30 text-[9px] sm:text-[10px] shrink-0" variant="outline">
+                  Level 5
                 </Badge>
               </div>
-              <p className="text-xs text-muted-foreground">Logged in as {superAdminName}</p>
+              <p className="text-[11px] sm:text-xs text-muted-foreground truncate">Logged in as {superAdminName}</p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
             <Button
               variant="outline"
               size="sm"
-              className="gap-2 text-xs"
+              className="gap-1 sm:gap-2 text-xs px-2 sm:px-3 h-8"
               onClick={() => navigate("/admin")}
             >
               <ExternalLink className="w-3.5 h-3.5 text-primary" />
-              <span className="hidden sm:inline">Open</span> Main Admin Panel
+              <span className="hidden sm:inline">Open </span><span className="hidden xs:inline">Main </span>Admin
             </Button>
-            <Button variant="ghost" size="sm" className="gap-1.5 text-xs text-muted-foreground" onClick={handleSignOut}>
+            <Button variant="ghost" size="sm" className="gap-1 sm:gap-1.5 text-xs text-muted-foreground px-2 sm:px-3 h-8" onClick={handleSignOut}>
               <LogOut className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Sign Out</span>
             </Button>
@@ -697,9 +699,9 @@ export default function SuperAdmin() {
       </header>
 
       {/* Main Content Area */}
-      <main className="container mx-auto px-4 py-8 max-w-6xl space-y-6">
+      <main className="container mx-auto px-4 py-6 sm:py-8 max-w-6xl space-y-6">
         {/* Metric Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
           <Card className="border-amber-500/30 bg-amber-500/5">
             <CardContent className="p-4 flex items-center justify-between">
               <div>
@@ -743,23 +745,23 @@ export default function SuperAdmin() {
 
         {/* Dashboard Navigation Tabs */}
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-4">
-          <TabsList className="bg-muted/60 p-1 border border-border/60">
-            <TabsTrigger value="requests" className="gap-2 text-xs">
+          <TabsList className="w-full flex overflow-x-auto no-scrollbar justify-start bg-muted/60 p-1 border border-border/60">
+            <TabsTrigger value="requests" className="gap-1.5 sm:gap-2 text-xs shrink-0">
               <Clock className="w-3.5 h-3.5" />
-              Admin Access Requests
+              <span className="hidden sm:inline">Admin </span>Access Requests
               {pendingRequests.length > 0 && (
                 <Badge className="h-4 px-1.5 text-[10px] bg-amber-500 text-white ml-1">
                   {pendingRequests.length}
                 </Badge>
               )}
             </TabsTrigger>
-            <TabsTrigger value="directory" className="gap-2 text-xs">
+            <TabsTrigger value="directory" className="gap-1.5 sm:gap-2 text-xs shrink-0">
               <Users className="w-3.5 h-3.5" />
-              Admin Directory
+              <span className="hidden sm:inline">Admin </span>Directory
             </TabsTrigger>
-            <TabsTrigger value="logs" className="gap-2 text-xs">
+            <TabsTrigger value="logs" className="gap-1.5 sm:gap-2 text-xs shrink-0">
               <History className="w-3.5 h-3.5" />
-              Audit Logs
+              <span className="hidden sm:inline">Audit </span>Logs
             </TabsTrigger>
           </TabsList>
 
@@ -837,18 +839,18 @@ export default function SuperAdmin() {
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-2 flex-shrink-0">
+                        <div className="grid grid-cols-2 sm:flex items-center gap-2 flex-shrink-0 w-full sm:w-auto pt-2 sm:pt-0">
                           <Button
                             size="sm"
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 text-xs h-8"
+                            className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5 text-xs h-9 sm:h-8"
                             onClick={() => handleApprove(req)}
                           >
-                            <Check className="w-3.5 h-3.5" /> Approve & Activate
+                            <Check className="w-3.5 h-3.5" /> Approve
                           </Button>
                           <Button
                             size="sm"
                             variant="destructive"
-                            className="gap-1.5 text-xs h-8"
+                            className="gap-1.5 text-xs h-9 sm:h-8"
                             onClick={() => handleReject(req.id, req.adminName)}
                           >
                             <X className="w-3.5 h-3.5" /> Reject
@@ -921,11 +923,11 @@ export default function SuperAdmin() {
                         </div>
 
                         {!isSelf && (
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 w-full sm:w-auto justify-end pt-1 sm:pt-0">
                             <Button
                               size="sm"
                               variant={user.is_blocked ? "outline" : "secondary"}
-                              className="text-xs h-8 gap-1.5"
+                              className="text-xs h-8 gap-1.5 flex-1 sm:flex-initial"
                               onClick={() => handleToggleBlock(user)}
                             >
                               {user.is_blocked ? (
@@ -941,7 +943,7 @@ export default function SuperAdmin() {
                             <Button
                               size="sm"
                               variant="ghost"
-                              className="text-xs h-8 text-destructive hover:bg-destructive/10"
+                              className="text-xs h-8 text-destructive hover:bg-destructive/10 shrink-0"
                               onClick={() => handleDeleteAdmin(user)}
                             >
                               <Trash2 className="w-3.5 h-3.5" />

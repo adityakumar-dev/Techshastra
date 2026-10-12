@@ -119,9 +119,9 @@ const About = () => {
                     repeat: Infinity,
                     ease: "easeInOut"
                   }}
-                  className="absolute top-0 left-0 w-16 h-16 sm:w-20 sm:h-20 glass rounded-2xl flex flex-col items-center justify-center -translate-x-1/4 -translate-y-1/4 shadow-lg border-primary/10"
+                  className="absolute top-1 left-1 sm:top-0 sm:left-0 w-14 h-14 sm:w-20 sm:h-20 glass rounded-2xl flex flex-col items-center justify-center sm:-translate-x-1/4 sm:-translate-y-1/4 shadow-lg border-primary/10"
                 >
-                  <span className="text-xs sm:text-sm font-heading font-medium text-primary">15+</span>
+                  <span className="text-[11px] sm:text-sm font-heading font-medium text-primary">15+</span>
                   <span className="text-[6px] sm:text-[8px] tracking-widest uppercase text-foreground/40">Domains</span>
                 </motion.div>
 
@@ -136,9 +136,9 @@ const About = () => {
                     ease: "easeInOut",
                     delay: 1
                   }}
-                  className="absolute bottom-0 right-0 w-20 h-20 sm:w-24 sm:h-24 glass rounded-2xl flex flex-col items-center justify-center translate-x-1/4 translate-y-1/4 shadow-lg border-primary/10"
+                  className="absolute bottom-1 right-1 sm:bottom-0 sm:right-0 w-16 h-16 sm:w-24 sm:h-24 glass rounded-2xl flex flex-col items-center justify-center sm:translate-x-1/4 sm:translate-y-1/4 shadow-lg border-primary/10"
                 >
-                  <span className="text-sm sm:text-base font-heading font-medium text-primary">500+</span>
+                  <span className="text-xs sm:text-base font-heading font-medium text-primary">500+</span>
                   <span className="text-[6px] sm:text-[8px] tracking-widest uppercase text-foreground/40">Innovators</span>
                 </motion.div>
 
@@ -153,14 +153,14 @@ const About = () => {
                     ease: "easeInOut",
                     delay: 2
                   }}
-                  className="absolute top-1/2 -right-6 sm:-right-10 w-16 h-16 sm:w-20 sm:h-20 glass rounded-2xl flex flex-col items-center justify-center shadow-lg border-primary/10"
+                  className="absolute top-1/2 right-0 sm:-right-10 w-14 h-14 sm:w-20 sm:h-20 glass rounded-2xl flex flex-col items-center justify-center shadow-lg border-primary/10"
                 >
-                  <span className="text-xs sm:text-sm font-heading font-medium text-primary">50+</span>
+                  <span className="text-[11px] sm:text-sm font-heading font-medium text-primary">50+</span>
                   <span className="text-[6px] sm:text-[8px] tracking-widest uppercase text-foreground/40">Launch</span>
                 </motion.div>
 
                 {/* Semantic Label */}
-                <div className="absolute -bottom-12 sm:-bottom-16 left-1/2 -translate-x-1/2 whitespace-nowrap">
+                <div className="absolute -bottom-10 sm:-bottom-16 left-1/2 -translate-x-1/2 whitespace-nowrap">
                   <span className="text-[8px] sm:text-[10px] tracking-[0.4em] uppercase text-foreground/30 font-light">
                     Innovation Core
                   </span>

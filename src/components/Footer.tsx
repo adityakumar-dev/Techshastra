@@ -66,12 +66,12 @@ const Footer = () => {
         </div>
 
         {/* Bottom */}
-        <div className="pt-8 border-t border-foreground/5 flex flex-col md:flex-row items-center justify-between gap-4 text-xs font-light text-foreground/40">
+        <div className="pt-8 border-t border-foreground/5 flex flex-col md:flex-row items-center justify-between gap-4 text-xs font-light text-foreground/40 text-center md:text-left">
           <p className="text-foreground/30">
             &copy; {new Date().getFullYear()} TECHSHASTRA · Uttarakhand Technical University.
           </p>
 
-          <div className="flex items-center gap-6">
+          <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2">
             <Link to="/privacy" className="hover:text-primary transition-colors duration-300">
               Privacy Policy
             </Link>

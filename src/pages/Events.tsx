@@ -110,25 +110,25 @@ const Events = () => {
                           </div>
                         </div>
 
-                        <CardContent className="p-8 space-y-6">
-                          <h3 className="text-2xl font-bold group-hover:text-primary transition-colors">{event.title}</h3>
-                          <p className="text-muted-foreground line-clamp-2 leading-relaxed">
+                        <CardContent className="p-5 sm:p-8 space-y-4 sm:space-y-6">
+                          <h3 className="text-xl sm:text-2xl font-bold group-hover:text-primary transition-colors">{event.title}</h3>
+                          <p className="text-muted-foreground text-xs sm:text-sm line-clamp-2 leading-relaxed">
                             {event.description}
                           </p>
 
                           {/* Event Details */}
-                          <div className="grid grid-cols-2 gap-4 py-4 border-y border-primary/5">
-                            <div className="flex items-center gap-2 text-sm">
-                              <Calendar className="w-4 h-4 text-primary" />
+                          <div className="flex flex-wrap items-center gap-3 sm:gap-4 py-3 sm:py-4 border-y border-primary/5 text-xs sm:text-sm">
+                            <div className="flex items-center gap-2">
+                              <Calendar className="w-4 h-4 text-primary shrink-0" />
                               <span className="font-medium">{format(new Date(event.event_date || event.date || Date.now()), "MMM d, yyyy")}</span>
                             </div>
-                            <div className="flex items-center gap-2 text-sm">
-                              <MapPin className="w-4 h-4 text-primary" />
-                              <span className="font-medium truncate">{event.location}</span>
+                            <div className="flex items-center gap-2">
+                              <MapPin className="w-4 h-4 text-primary shrink-0" />
+                              <span className="font-medium truncate max-w-[160px] sm:max-w-none">{event.location}</span>
                             </div>
                             {event.max_attendees && (
-                              <div className="flex items-center gap-2 text-sm">
-                                <Users className="w-4 h-4 text-primary" />
+                              <div className="flex items-center gap-2">
+                                <Users className="w-4 h-4 text-primary shrink-0" />
                                 <span className="font-medium">Up to {event.max_attendees} slots</span>
                               </div>
                             )}
@@ -136,7 +136,7 @@ const Events = () => {
 
                           {/* Register Button */}
                           <Button 
-                            className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-bold h-12 rounded-xl transition-all hover:shadow-[0_0_20px_rgba(var(--primary),0.4)]"
+                            className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-bold h-11 sm:h-12 rounded-xl transition-all hover:shadow-[0_0_20px_rgba(var(--primary),0.4)]"
                             asChild
                           >
                             <a href="/join">Register Now</a>

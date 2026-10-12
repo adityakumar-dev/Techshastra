@@ -517,14 +517,16 @@ export default function Auth() {
 
           <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as AuthTab)} className="space-y-4">
             <TabsList className="grid grid-cols-3 bg-muted/60 p-1 border border-border/60">
-              <TabsTrigger value="signin" className="text-xs gap-1.5">
-                <LogIn className="w-3.5 h-3.5" /> Sign In
+              <TabsTrigger value="signin" className="text-xs gap-1 sm:gap-1.5 px-1.5 sm:px-3">
+                <LogIn className="w-3.5 h-3.5 shrink-0" /> Sign In
               </TabsTrigger>
-              <TabsTrigger value="register" className="text-xs gap-1.5">
-                <UserPlus className="w-3.5 h-3.5" /> Request Access
+              <TabsTrigger value="register" className="text-xs gap-1 sm:gap-1.5 px-1.5 sm:px-3">
+                <UserPlus className="w-3.5 h-3.5 shrink-0" />
+                <span className="hidden sm:inline">Request </span>Access
               </TabsTrigger>
-              <TabsTrigger value="status" className="text-xs gap-1.5">
-                <Search className="w-3.5 h-3.5" /> Track Status
+              <TabsTrigger value="status" className="text-xs gap-1 sm:gap-1.5 px-1.5 sm:px-3">
+                <Search className="w-3.5 h-3.5 shrink-0" />
+                <span className="hidden sm:inline">Track </span>Status
               </TabsTrigger>
             </TabsList>
 

@@ -19,7 +19,7 @@ const MentorSpotlight = () => {
                 <Card className="glass border-0 overflow-hidden group max-w-4xl mx-auto shadow-2xl">
                     <CardContent className="p-0 flex flex-col md:flex-row items-center">
                         {/* Image Section with transition */}
-                        <div className="w-full md:w-2/5 h-[400px] relative overflow-hidden">
+                        <div className="w-full md:w-2/5 h-64 sm:h-80 md:h-[400px] relative overflow-hidden">
                             <img
                                 src={mentorImg}
                                 alt="Dr. Sandeep Singh Negi"
@@ -29,23 +29,23 @@ const MentorSpotlight = () => {
                         </div>
 
                         {/* Content Section */}
-                        <div className="p-10 md:p-14 md:w-3/5 space-y-6">
-                            <div className="space-y-2">
-                                <h3 className="text-2xl md:text-3xl font-heading font-light tracking-wide text-foreground">
+                        <div className="p-6 sm:p-10 md:p-14 md:w-3/5 space-y-5 sm:space-y-6">
+                            <div className="space-y-1 sm:space-y-2">
+                                <h3 className="text-xl sm:text-2xl md:text-3xl font-heading font-light tracking-wide text-foreground">
                                     Dr. Sandeep Singh Negi
                                 </h3>
-                                <p className="text-primary font-normal tracking-[0.1em] uppercase text-sm">
+                                <p className="text-primary font-normal tracking-[0.1em] uppercase text-xs sm:text-sm">
                                     Founding Visionary & Academic Coordinator
                                 </p>
                             </div>
 
-                            <div className="relative pt-6 pl-8 border-l-2 border-primary/20">
-                                <Quote className="absolute -top-2 -left-4 w-10 h-10 text-primary/20 -rotate-12" />
-                                <p className="text-lg md:text-xl font-light italic leading-relaxed text-foreground/85 relative z-10">
+                            <div className="relative pt-4 sm:pt-6 pl-6 sm:pl-8 border-l-2 border-primary/20">
+                                <Quote className="absolute -top-2 -left-4 w-8 h-8 sm:w-10 sm:h-10 text-primary/20 -rotate-12" />
+                                <p className="text-sm sm:text-lg md:text-xl font-light italic leading-relaxed text-foreground/85 relative z-10">
                                     "Our mission is to empower the next generation of innovators in Uttarakhand,
                                     bridging the gap between academic excellence and real-world impact."
                                 </p>
-                                <div className="mt-6 font-heading text-sm tracking-widest uppercase opacity-40 italic">
+                                <div className="mt-4 sm:mt-6 font-heading text-xs sm:text-sm tracking-widest uppercase opacity-40 italic">
                                     — Founding Philosophy
                                 </div>
                             </div>
