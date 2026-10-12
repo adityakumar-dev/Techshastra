@@ -29,16 +29,17 @@ const ProjectDetail = () => {
             github: remote.github_url,
             demo: remote.demo_url,
             tags: remote.tags || [],
+            // Normalise team — Supabase uses lead_name/designer_name
             team: {
-              lead: remote.lead_name,
-              designer: remote.designer_name,
+              lead: remote.lead_name || "TECHSHASTRA Team",
+              designer: remote.designer_name || "Design Team",
             },
           });
           setLoading(false);
           return;
         }
       } catch (_err) {
-        // Fallback
+        // Fallback to localStorage
       }
       const found = getProject(id);
       setProject(found);
