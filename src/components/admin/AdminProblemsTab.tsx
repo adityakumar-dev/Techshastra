@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
+import Tesseract from "tesseract.js";
 import {
   getAllProblemsAdmin,
   saveProblem,
@@ -6,6 +7,7 @@ import {
   toggleProblemPublish,
   type CodingProblem,
   type ProblemDifficulty,
+  type TargetSemester,
   getDefaultStarterCode,
 } from "@/lib/services/problemService";
 import { type SupportedLanguage, type TestCase } from "@/lib/services/codeExecutionService";
@@ -69,6 +71,12 @@ import {
   ArrowLeft,
   User,
   AlertCircle,
+  UploadCloud,
+  FileImage,
+  Layers,
+  GraduationCap,
+  Copy,
+  FileText,
 } from "lucide-react";
 
 interface AdminProblemsTabProps {
@@ -99,6 +107,18 @@ const TAG_PRESETS = [
   "Sliding Window",
 ];
 
+export const SEMESTER_PRESETS: TargetSemester[] = [
+  "All",
+  "Sem 1",
+  "Sem 2",
+  "Sem 3",
+  "Sem 4",
+  "Sem 5",
+  "Sem 6",
+  "Sem 7",
+  "Sem 8",
+];
+
 const POINTS_PRESETS = [30, 50, 80, 100, 150];
 
 export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
@@ -111,6 +131,7 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
   const [search, setSearch] = useState("");
   const [difficultyFilter, setDifficultyFilter] = useState<string>("All");
   const [facultyFilter, setFacultyFilter] = useState<string>("All");
+  const [semesterFilter, setSemesterFilter] = useState<string>("All");
 
   // Modal editor state
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -122,11 +143,21 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
   const [category, setCategory] = useState("Algorithms");
   const [difficulty, setDifficulty] = useState<ProblemDifficulty>("Easy");
   const [points, setPoints] = useState(50);
+  const [targetSemester, setTargetSemester] = useState<TargetSemester>("All");
   const [publishedBy, setPublishedBy] = useState(currentAdminName);
   const [isPublished, setIsPublished] = useState(true);
   const [description, setDescription] = useState("");
   const [constraintsText, setConstraintsText] = useState("");
   const [tagsText, setTagsText] = useState("");
+
+  // OCR Extraction State
+  const [ocrLoading, setOcrLoading] = useState(false);
+  const [ocrProgress, setOcrProgress] = useState(0);
+  const [ocrStatus, setOcrStatus] = useState("");
+  const [ocrRawText, setOcrRawText] = useState("");
+  const [showRawOcr, setShowRawOcr] = useState(false);
+  const [dragOver, setDragOver] = useState(false);
+  const ocrFileInputRef = useRef<HTMLInputElement>(null);
 
   // Code language tab
   const [activeCodeLang, setActiveCodeLang] = useState<"python" | "javascript" | "cpp">("python");
@@ -141,6 +172,145 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
 
   const [hiddenInput, setHiddenInput] = useState("");
   const [hiddenOutput, setHiddenOutput] = useState("");
+
+  // ── OCR Drag & Drop Question Extractor ─────────────────────────────────────
+  const parseAndApplyOcrText = (rawText: string) => {
+    setOcrRawText(rawText);
+    const clean = rawText.replace(/\r\n/g, "\n");
+    const lines = clean.split("\n").map((l) => l.trim()).filter(Boolean);
+
+    // 1. Title
+    let extractedTitle = "";
+    const titleMatch = clean.match(/(?:problem|question|title|q\d+)\s*[:.\-]\s*([^\n]+)/i);
+    if (titleMatch) {
+      extractedTitle = titleMatch[1].trim();
+    } else {
+      const firstGood = lines.find(
+        (l) => l.length > 3 && l.length < 80 && !l.toLowerCase().startsWith("page") && !l.toLowerCase().startsWith("assignment")
+      );
+      if (firstGood) extractedTitle = firstGood;
+    }
+    if (extractedTitle) setTitle(extractedTitle);
+
+    // 2. Difficulty
+    if (/\b(hard)\b/i.test(clean)) setDifficulty("Hard");
+    else if (/\b(medium)\b/i.test(clean)) setDifficulty("Medium");
+    else if (/\b(easy)\b/i.test(clean)) setDifficulty("Easy");
+
+    // 3. Semester
+    const semMatch = clean.match(/(?:semester|sem)\s*[:#\-\s]?\s*([1-8])/i);
+    if (semMatch) {
+      const semNum = semMatch[1];
+      setTargetSemester(`Sem ${semNum}` as TargetSemester);
+    }
+
+    // 4. Constraints
+    const constrMatch = clean.match(/constraints?\s*[:\-]?\s*([\s\S]*?)(?:example|input|sample|output|$)/i);
+    if (constrMatch && constrMatch[1].trim()) {
+      const cLines = constrMatch[1]
+        .split("\n")
+        .map((s) => s.trim().replace(/^[-*•]\s*/, ""))
+        .filter((s) => s.length > 0 && !s.toLowerCase().startsWith("example"));
+      if (cLines.length > 0) setConstraintsText(cLines.join("\n"));
+    }
+
+    // 5. Sample Input / Output
+    const inputMatch = clean.match(/(?:sample\s+input|example\s*\d*[:\s]*input|input)\s*[:\-]\s*([\s\S]*?)(?:output|sample\s+output|explanation|$)/i);
+    if (inputMatch) {
+      const rawInput = inputMatch[1].trim().split(/\n\s*(?:output|sample)/i)[0].trim();
+      if (rawInput) setSampleInput(rawInput);
+    }
+
+    const outputMatch = clean.match(/(?:sample\s+output|example\s*\d*[:\s]*output|output)\s*[:\-]\s*([\s\S]*?)(?:explanation|constraints|note|$)/i);
+    if (outputMatch) {
+      const rawOutput = outputMatch[1].trim().split(/\n\s*(?:explanation|constraints)/i)[0].trim();
+      if (rawOutput) setSampleOutput(rawOutput);
+    }
+
+    const explMatch = clean.match(/(?:explanation|note)\s*[:\-]\s*([\s\S]*?)(?:example|constraints|$)/i);
+    if (explMatch) {
+      const rawExpl = explMatch[1].trim().split(/\n\s*(?:example|constraints)/i)[0].trim();
+      if (rawExpl) setSampleExplanation(rawExpl);
+    }
+
+    // 6. Description / Statement
+    let statement = clean
+      .replace(/(?:problem|question|title|q\d+)\s*[:.\-]\s*[^\n]+/i, "")
+      .replace(/constraints?\s*[:\-]?\s*[\s\S]*?(?:example|input|sample|output|$)/i, "")
+      .replace(/(?:sample\s+input|example[\s\S]*)/i, "")
+      .trim();
+    if (statement.length < 20) {
+      statement = clean.slice(0, 500);
+    }
+    if (statement) setDescription(statement);
+
+    // 7. Tags & Category Detection
+    const detectedTags: string[] = [];
+    if (/array|list|subarray/i.test(clean)) detectedTags.push("Array");
+    if (/string|anagram|palindrome/i.test(clean)) detectedTags.push("String");
+    if (/tree|bst|binary\s+tree/i.test(clean)) detectedTags.push("Tree");
+    if (/graph|dfs|bfs/i.test(clean)) detectedTags.push("Graph");
+    if (/dynamic\s+programming|dp|memoization/i.test(clean)) detectedTags.push("Dynamic Programming");
+    if (/binary\s+search/i.test(clean)) detectedTags.push("Binary Search");
+    if (/two\s+pointers/i.test(clean)) detectedTags.push("Two Pointers");
+    if (/hash\s*map|hash\s*table|dictionary/i.test(clean)) detectedTags.push("Hash Map");
+    if (/stack|queue/i.test(clean)) detectedTags.push("Stack");
+
+    if (detectedTags.length > 0) {
+      setTagsText(detectedTags.join(", "));
+      setCategory(detectedTags[0]);
+    }
+
+    toast({
+      title: "✨ OCR Extraction Complete!",
+      description: `Autofilled "${extractedTitle || "Question"}" with question statement, constraints, and test cases.`,
+    });
+  };
+
+  const handleOcrFile = async (file: File) => {
+    if (!file.type.startsWith("image/")) {
+      toast({
+        title: "Please drop an image",
+        description: "Supported formats: PNG, JPG, JPEG, WebP screenshots or assignment photos.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setOcrLoading(true);
+    setOcrProgress(15);
+    setOcrStatus("Initializing OCR engine...");
+    try {
+      const worker = await Tesseract.createWorker("eng", 1, {
+        logger: (m) => {
+          if (m.status === "recognizing text" && typeof m.progress === "number") {
+            setOcrProgress(Math.round(m.progress * 100));
+            setOcrStatus(`Extracting question text (${Math.round(m.progress * 100)}%)...`);
+          }
+        },
+      });
+
+      setOcrStatus("Analyzing document layout...");
+      const ret = await worker.recognize(file);
+      await worker.terminate();
+
+      if (ret?.data?.text) {
+        parseAndApplyOcrText(ret.data.text);
+      } else {
+        throw new Error("No readable text detected");
+      }
+    } catch (err: any) {
+      console.error("OCR error", err);
+      toast({
+        title: "OCR Failed",
+        description: "Could not read text from this image. Please use a clearer screenshot or enter details manually.",
+        variant: "destructive",
+      });
+    } finally {
+      setOcrLoading(false);
+      setDragOver(false);
+    }
+  };
 
   const loadData = async () => {
     setLoading(true);
@@ -200,9 +370,12 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
       const matchesFaculty =
         !isSuperAdmin || facultyFilter === "All" || p.publishedBy === facultyFilter;
 
-      return matchesSearch && matchesDiff && matchesFaculty;
+      const matchesSemester =
+        semesterFilter === "All" || (p.targetSemester || "All") === semesterFilter;
+
+      return matchesSearch && matchesDiff && matchesFaculty && matchesSemester;
     });
-  }, [scopedProblems, search, difficultyFilter, facultyFilter, isSuperAdmin]);
+  }, [scopedProblems, search, difficultyFilter, facultyFilter, semesterFilter, isSuperAdmin]);
 
   const openNewProblemDialog = () => {
     const defaults = getDefaultStarterCode();
@@ -211,6 +384,9 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
     setCategory("Algorithms");
     setDifficulty("Easy");
     setPoints(50);
+    setTargetSemester("All");
+    setOcrRawText("");
+    setShowRawOcr(false);
     // Locked strictly to logged in admin identity
     setPublishedBy(currentAdminName);
     setIsPublished(true);
@@ -245,6 +421,9 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
     setCategory(prob.category || "Algorithms");
     setDifficulty(prob.difficulty);
     setPoints(prob.points);
+    setTargetSemester(prob.targetSemester || "All");
+    setOcrRawText("");
+    setShowRawOcr(false);
     // If not super admin, lock to currentAdminName
     setPublishedBy(isSuperAdmin ? prob.publishedBy || currentAdminName : currentAdminName);
     setIsPublished(prob.isPublished);
@@ -355,6 +534,7 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
         difficulty,
         category: category.trim(),
         points: Number(points) || 50,
+        targetSemester: targetSemester || "All",
         publishedBy: authorToUse,
         publishedAt: new Date().toISOString(),
         isPublished,
@@ -543,19 +723,19 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
     switch (diff) {
       case "Easy":
         return (
-          <Badge variant="outline" className="text-emerald-500 border-emerald-500/30 bg-emerald-500/10">
+          <Badge variant="outline" className="text-emerald-800 dark:text-emerald-300 border-emerald-500/40 bg-emerald-500/15 font-semibold text-[10px]">
             Easy
           </Badge>
         );
       case "Medium":
         return (
-          <Badge variant="outline" className="text-amber-500 border-amber-500/30 bg-amber-500/10">
+          <Badge variant="outline" className="text-amber-800 dark:text-amber-300 border-amber-500/40 bg-amber-500/15 font-semibold text-[10px]">
             Medium
           </Badge>
         );
       case "Hard":
         return (
-          <Badge variant="outline" className="text-rose-500 border-rose-500/30 bg-rose-500/10">
+          <Badge variant="outline" className="text-rose-800 dark:text-rose-300 border-rose-500/40 bg-rose-500/15 font-semibold text-[10px]">
             Hard
           </Badge>
         );
@@ -565,29 +745,29 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
   return (
     <div className="space-y-6">
       {/* ── Top Header Banner & Stats ── */}
-      <Card className="glass border border-border/40 overflow-hidden relative">
-        <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-primary/60 via-purple-500/40 to-primary/20" />
+      <Card className="glass border-white/30 dark:border-white/10 shadow-glass overflow-hidden relative">
+        <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-primary via-purple-500 to-primary/40" />
         <CardHeader className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4">
           <div>
             <div className="flex items-center gap-2.5">
-              <div className="p-2 rounded-xl bg-primary/10 border border-primary/20 text-primary">
+              <div className="p-2 rounded-xl bg-primary/10 border-white/20 text-primary">
                 <Code2 className="w-5 h-5" />
               </div>
               <div>
-                <CardTitle className="text-xl font-heading flex items-center gap-2">
+                <CardTitle className="text-xl font-heading flex items-center gap-2 text-foreground">
                   <span>Faculty Assignments & Coding Problems</span>
                   {!isSuperAdmin && (
-                    <Badge variant="outline" className="text-[10px] font-mono border-primary/30 text-primary bg-primary/5">
+                    <Badge variant="outline" className="text-[10px] font-mono border-primary/30 text-primary bg-primary/5 font-medium">
                       Your Curriculum Scope
                     </Badge>
                   )}
                   {isSuperAdmin && (
-                    <Badge variant="outline" className="text-[10px] font-mono border-amber-500/30 text-amber-500 bg-amber-500/5">
+                    <Badge variant="outline" className="text-[10px] font-mono border-amber-500/40 text-amber-800 dark:text-amber-300 bg-amber-500/10 font-semibold">
                       Super Admin (All Faculty)
                     </Badge>
                   )}
                 </CardTitle>
-                <CardDescription className="text-xs sm:text-sm mt-0.5">
+                <CardDescription className="text-xs sm:text-sm mt-0.5 text-foreground/70">
                   {!isSuperAdmin
                     ? `Managing your posted questions as ${currentAdminName}. Other faculty members' questions are hidden.`
                     : "Global problem registry across all faculty departments and instructors."}
@@ -601,7 +781,7 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
               variant="outline"
               size="sm"
               onClick={handleSeedStandardProblems}
-              className="text-xs rounded-xl gap-1.5 glass hover:bg-muted/50 border-border/60"
+              className="text-xs rounded-xl gap-1.5 glass hover:bg-white/40 border-white/30 dark:border-white/10 font-medium"
             >
               <FolderPlus size={14} className="text-primary" />
               <span>Load Starter Challenges</span>
@@ -609,7 +789,7 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
             <Button
               size="sm"
               onClick={openNewProblemDialog}
-              className="text-xs rounded-xl gap-1.5 shadow-lg shadow-primary/25 bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-700 text-white font-medium"
+              className="text-xs rounded-xl gap-1.5 shadow-md bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-700 text-white font-medium"
             >
               <Plus size={15} />
               <span>Create Problem</span>
@@ -620,8 +800,8 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
         {/* Stats Row */}
         <CardContent className="pt-0">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="p-3 rounded-xl bg-background/60 border border-border/40 backdrop-blur-sm">
-              <span className="text-[11px] text-muted-foreground flex items-center gap-1">
+            <div className="p-3 rounded-2xl glass border-white/25 dark:border-white/10 bg-white/40 dark:bg-card/40">
+              <span className="text-[11px] text-foreground/70 font-medium flex items-center gap-1">
                 <FileCode size={12} className="text-primary" />
                 {isSuperAdmin ? "Total Challenges" : "Your Challenges"}
               </span>
@@ -629,26 +809,26 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
                 {scopedProblems.length}
               </p>
             </div>
-            <div className="p-3 rounded-xl bg-background/60 border border-border/40 backdrop-blur-sm">
-              <span className="text-[11px] text-emerald-500 flex items-center gap-1">
+            <div className="p-3 rounded-2xl glass border-white/25 dark:border-white/10 bg-white/40 dark:bg-card/40">
+              <span className="text-[11px] text-emerald-800 dark:text-emerald-300 font-semibold flex items-center gap-1">
                 <Eye size={12} />
                 Live (Visible)
               </span>
-              <p className="text-2xl font-bold font-heading mt-0.5 text-emerald-500">
+              <p className="text-2xl font-bold font-heading mt-0.5 text-emerald-700 dark:text-emerald-300">
                 {scopedProblems.filter((p) => p.isPublished).length}
               </p>
             </div>
-            <div className="p-3 rounded-xl bg-background/60 border border-border/40 backdrop-blur-sm">
-              <span className="text-[11px] text-muted-foreground flex items-center gap-1">
+            <div className="p-3 rounded-2xl glass border-white/25 dark:border-white/10 bg-white/40 dark:bg-card/40">
+              <span className="text-[11px] text-foreground/60 font-medium flex items-center gap-1">
                 <EyeOff size={12} />
                 Drafts (Hidden)
               </span>
-              <p className="text-2xl font-bold font-heading mt-0.5 text-muted-foreground">
+              <p className="text-2xl font-bold font-heading mt-0.5 text-foreground/70">
                 {scopedProblems.filter((p) => !p.isPublished).length}
               </p>
             </div>
-            <div className="p-3 rounded-xl bg-background/60 border border-border/40 backdrop-blur-sm">
-              <span className="text-[11px] text-primary flex items-center gap-1">
+            <div className="p-3 rounded-2xl glass border-white/25 dark:border-white/10 bg-white/40 dark:bg-card/40">
+              <span className="text-[11px] text-primary font-semibold flex items-center gap-1">
                 <Sparkles size={12} />
                 Points Pool
               </span>
@@ -661,11 +841,11 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
       </Card>
 
       {/* ── Search & Filter Controls ── */}
-      <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between glass p-3.5 rounded-2xl border border-border/40">
+      <div className="flex flex-col sm:flex-row gap-3 items-stretch sm:items-center justify-between glass p-3.5 rounded-2xl border-white/30 dark:border-white/10 bg-white/40 dark:bg-card/40">
         <div className="relative flex-1 max-w-md">
           <Search
             size={15}
-            className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground"
+            className="absolute left-3.5 top-1/2 -translate-y-1/2 text-foreground/50"
           />
           <Input
             value={search}
@@ -675,21 +855,21 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
                 ? "Search by title, topic, or faculty author..."
                 : "Search your questions by title or topic..."
             }
-            className="pl-9 h-9 text-xs rounded-xl bg-background/60 border-border/50 focus-visible:ring-primary/30"
+            className="pl-9 h-9 text-xs rounded-xl bg-white/80 dark:bg-white/5 border-white/40 dark:border-white/10 text-foreground placeholder:text-foreground/40 shadow-xs focus-visible:ring-primary/20"
           />
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
           {/* Difficulty Segmented Chips */}
-          <div className="flex items-center rounded-xl bg-muted/60 p-1 text-xs border border-border/40">
+          <div className="flex items-center rounded-xl glass bg-white/60 dark:bg-muted/40 p-1 text-xs border-white/25 dark:border-white/10">
             {["All", "Easy", "Medium", "Hard"].map((diff) => (
               <button
                 key={diff}
                 onClick={() => setDifficultyFilter(diff)}
                 className={`px-2.5 py-1 rounded-lg text-xs transition-all ${
                   difficultyFilter === diff
-                    ? "bg-background text-foreground font-semibold shadow-xs"
-                    : "text-muted-foreground hover:text-foreground"
+                    ? "bg-primary text-primary-foreground font-semibold shadow-xs"
+                    : "text-foreground/70 hover:text-foreground hover:bg-white/30"
                 }`}
               >
                 {diff}
@@ -697,13 +877,28 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
             ))}
           </div>
 
+          {/* Semester Filter Dropdown */}
+          <Select value={semesterFilter} onValueChange={setSemesterFilter}>
+            <SelectTrigger className="h-8 text-xs w-[130px] rounded-xl bg-white/80 dark:bg-white/5 border-white/30 dark:border-white/10 text-foreground font-medium shadow-xs">
+              <SelectValue placeholder="All Semesters" />
+            </SelectTrigger>
+            <SelectContent className="glass border-white/30 dark:border-white/10">
+              <SelectItem value="All">All Semesters</SelectItem>
+              {SEMESTER_PRESETS.filter((s) => s !== "All").map((sem) => (
+                <SelectItem key={sem} value={sem}>
+                  {sem}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
           {/* SuperAdmin Faculty Author Filter */}
           {isSuperAdmin && facultyAuthors.length > 0 && (
             <Select value={facultyFilter} onValueChange={setFacultyFilter}>
-              <SelectTrigger className="h-8 text-xs w-[140px] rounded-xl bg-background/60 border-border/50">
+              <SelectTrigger className="h-8 text-xs w-[140px] rounded-xl bg-white/80 dark:bg-white/5 border-white/30 dark:border-white/10 text-foreground font-medium shadow-xs">
                 <SelectValue placeholder="All Faculty" />
               </SelectTrigger>
-              <SelectContent>
+              <SelectContent className="glass border-white/30 dark:border-white/10">
                 <SelectItem value="All">All Faculty</SelectItem>
                 {facultyAuthors.map((author) => (
                   <SelectItem key={author} value={author}>
@@ -718,10 +913,10 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
             variant="ghost"
             size="sm"
             onClick={loadData}
-            className="h-8 px-2.5 text-xs rounded-xl hover:bg-muted/60"
+            className="h-8 px-2.5 text-xs rounded-xl glass border-white/20 hover:bg-white/40"
             title="Refresh problems"
           >
-            <RefreshCw size={13} className={loading ? "animate-spin text-primary" : "text-muted-foreground"} />
+            <RefreshCw size={13} className={loading ? "animate-spin text-primary" : "text-foreground/60"} />
           </Button>
         </div>
       </div>
@@ -729,8 +924,8 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
       {/* ── Problems List ── */}
       <div className="space-y-3">
         {filteredProblems.length === 0 ? (
-          <div className="p-12 text-center rounded-2xl glass border border-border/40 space-y-3">
-            <div className="w-14 h-14 mx-auto rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary">
+          <div className="p-12 text-center rounded-2xl glass border-white/30 dark:border-white/10 space-y-3 bg-white/30 dark:bg-card/30">
+            <div className="w-14 h-14 mx-auto rounded-2xl bg-primary/10 border-white/20 flex items-center justify-center text-primary">
               <Code2 size={28} />
             </div>
             <h4 className="font-heading font-semibold text-foreground text-base">
@@ -738,10 +933,10 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
                 ? "No Problems In Your Dashboard"
                 : "No Matching Problems"}
             </h4>
-            <p className="text-xs text-muted-foreground max-w-md mx-auto leading-relaxed">
+            <p className="text-xs text-foreground/70 max-w-md mx-auto leading-relaxed">
               {scopedProblems.length === 0
                 ? `You haven't posted any coding challenges under your account (${currentAdminName}) yet. Click "Create Problem" to create your first question, or load starter challenges.`
-                : "No questions match your current search and difficulty filters."}
+                : "No questions match your current search, difficulty, and semester filters."}
             </p>
             {scopedProblems.length === 0 && (
               <div className="pt-2 flex items-center justify-center gap-2">
@@ -770,20 +965,20 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
             return (
               <div
                 key={prob.id}
-                className="p-4 rounded-2xl glass border border-border/40 hover:border-primary/30 hover:bg-muted/20 transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 group"
+                className="p-4 rounded-2xl glass border-white/25 dark:border-white/10 hover:border-purple-400/40 hover:bg-white/40 dark:hover:bg-white/5 transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 group"
               >
                 <div className="flex items-start sm:items-center gap-3.5 min-w-0">
                   <div className="mt-1 sm:mt-0">
                     {prob.isPublished ? (
                       <div
-                        className="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-500 flex items-center justify-center shadow-xs"
+                        className="w-9 h-9 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-700 dark:text-emerald-300 flex items-center justify-center shadow-xs"
                         title="Live & Visible to Students"
                       >
                         <Eye size={17} />
                       </div>
                     ) : (
                       <div
-                        className="w-9 h-9 rounded-xl bg-muted/80 border border-border/50 text-muted-foreground flex items-center justify-center"
+                        className="w-9 h-9 rounded-xl glass bg-white/40 dark:bg-muted/40 border-white/20 text-foreground/50 flex items-center justify-center"
                         title="Draft (Hidden)"
                       >
                         <EyeOff size={17} />
@@ -797,33 +992,40 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
                         {prob.title}
                       </span>
                       {getDifficultyBadge(prob.difficulty)}
-                      <span className="text-[11px] font-mono text-primary font-medium">
+                      <Badge
+                        variant="outline"
+                        className="text-[10px] py-0 px-2 rounded-md border-purple-500/40 text-purple-900 dark:text-purple-300 bg-purple-500/10 font-semibold"
+                      >
+                        <GraduationCap size={11} className="mr-1 inline text-purple-600 dark:text-purple-400" />
+                        {prob.targetSemester || "All Semesters"}
+                      </Badge>
+                      <span className="text-[11px] font-mono text-primary font-bold">
                         +{prob.points} pts
                       </span>
-                      <Badge variant="secondary" className="text-[10px] py-0 px-2 rounded-md">
+                      <Badge variant="secondary" className="text-[10px] py-0 px-2 rounded-md font-medium text-foreground/80">
                         {prob.category}
                       </Badge>
                     </div>
 
-                    <p className="text-xs text-muted-foreground line-clamp-1 mt-1 font-light">
+                    <p className="text-xs text-foreground/70 line-clamp-1 mt-1 font-light">
                       {prob.description}
                     </p>
 
-                    <div className="flex items-center gap-2.5 text-[11px] text-muted-foreground mt-1.5 flex-wrap">
+                    <div className="flex items-center gap-2.5 text-[11px] text-foreground/60 mt-1.5 flex-wrap">
                       <span className="flex items-center gap-1 font-medium">
                         <User size={11} className="text-primary" />
-                        <strong className="text-foreground/80 font-normal">{prob.publishedBy}</strong>
+                        <strong className="text-foreground/90 font-medium">{prob.publishedBy}</strong>
                       </span>
                       <span>•</span>
                       <span>
-                        Tests: <strong className="text-foreground/80 font-normal">{prob.sampleTestCases?.length || 0} sample, {prob.hiddenTestCases?.length || 0} hidden</strong>
+                        Tests: <strong className="text-foreground/90 font-medium">{prob.sampleTestCases?.length || 0} sample, {prob.hiddenTestCases?.length || 0} hidden</strong>
                       </span>
                       <span>•</span>
                       <span
                         className={
                           prob.isPublished
-                            ? "text-emerald-500 font-medium"
-                            : "text-amber-500 font-medium"
+                            ? "text-emerald-700 dark:text-emerald-300 font-semibold"
+                            : "text-amber-700 dark:text-amber-300 font-semibold"
                         }
                       >
                         {prob.isPublished ? "● Live to Students" : "○ Draft (Hidden)"}
@@ -835,10 +1037,10 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
                 {/* Action Controls */}
                 <div className="flex items-center gap-2 self-end md:self-center shrink-0">
                   {/* Live switch toggle */}
-                  <div className="flex items-center gap-1.5 mr-2 px-2.5 py-1 rounded-xl bg-background/50 border border-border/40">
+                  <div className="flex items-center gap-1.5 mr-2 px-2.5 py-1 rounded-xl glass border-white/30 dark:border-white/10 bg-white/40 dark:bg-card/40">
                     <Label
                       htmlFor={`publish-${prob.id}`}
-                      className="text-[11px] text-muted-foreground cursor-pointer select-none font-medium"
+                      className="text-[11px] text-foreground/70 cursor-pointer select-none font-medium"
                     >
                       {prob.isPublished ? "Live" : "Draft"}
                     </Label>
@@ -854,7 +1056,7 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
                     href={`/student/problems/${prob.id}`}
                     target="_blank"
                     rel="noreferrer"
-                    className="p-2 rounded-xl hover:bg-muted/80 text-muted-foreground hover:text-foreground transition-colors border border-transparent hover:border-border/50"
+                    className="p-2 rounded-xl glass hover:bg-white/60 text-foreground/60 hover:text-foreground transition-colors border-white/20"
                     title="Preview in Student Solver"
                   >
                     <ExternalLink size={15} />
@@ -865,7 +1067,7 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
                     variant="outline"
                     disabled={!userOwns && !isSuperAdmin}
                     onClick={() => openEditDialog(prob)}
-                    className="h-8 px-2.5 text-xs rounded-xl gap-1 border-border/60 hover:bg-primary/10 hover:text-primary hover:border-primary/30 transition-all"
+                    className="h-8 px-2.5 text-xs rounded-xl gap-1 glass border-white/30 dark:border-white/10 hover:bg-primary/10 hover:text-primary transition-all font-medium"
                   >
                     <Pencil size={12} />
                     <span>Edit</span>
@@ -876,7 +1078,7 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
                     variant="ghost"
                     disabled={!userOwns && !isSuperAdmin}
                     onClick={() => handleDelete(prob)}
-                    className="h-8 px-2 text-xs text-rose-500 hover:text-rose-600 hover:bg-rose-500/10 rounded-xl transition-all"
+                    className="h-8 px-2 text-xs text-rose-600 hover:text-rose-700 hover:bg-rose-500/10 rounded-xl transition-all"
                     title="Delete Problem"
                   >
                     <Trash2 size={13} />
@@ -892,12 +1094,12 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
       {/* ── REDESIGNED HIGH-END MODAL DIALOG: 3 STRUCTURED SECTIONS ───────── */}
       {/* ══════════════════════════════════════════════════════════════════════ */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-3xl sm:max-w-4xl max-h-[92vh] flex flex-col p-0 overflow-hidden bg-background/95 backdrop-blur-2xl border-primary/20 shadow-2xl rounded-2xl">
+        <DialogContent className="max-w-3xl sm:max-w-4xl max-h-[92vh] flex flex-col p-0 overflow-hidden glass bg-card/95 backdrop-blur-2xl border border-white/30 dark:border-white/10 shadow-2xl rounded-2xl">
           {/* Glowing top line */}
           <div className="h-1 w-full bg-gradient-to-r from-primary via-purple-500 to-primary/40 shrink-0" />
 
           {/* Modal Header */}
-          <div className="p-5 pb-3 border-b border-border/40 shrink-0">
+          <div className="p-5 pb-3 border-b border-white/20 dark:border-white/10 shrink-0">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 text-primary flex items-center justify-center shrink-0">
@@ -908,10 +1110,10 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
                     <span>{editingId ? "Edit Problem / Assignment" : "Create New Coding Challenge"}</span>
                     <Badge
                       variant="outline"
-                      className={`text-[10px] py-0 px-2 font-mono ${
+                      className={`text-[10px] py-0 px-2 font-mono font-medium ${
                         isPublished
-                          ? "border-emerald-500/30 text-emerald-500 bg-emerald-500/5"
-                          : "border-amber-500/30 text-amber-500 bg-amber-500/5"
+                          ? "border-emerald-500/40 text-emerald-800 dark:text-emerald-300 bg-emerald-500/15"
+                          : "border-amber-500/40 text-amber-800 dark:text-amber-300 bg-amber-500/15"
                       }`}
                     >
                       {isPublished ? "Public Live" : "Private Draft"}
@@ -924,7 +1126,7 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
               </div>
 
               {/* Verified Author Badge (Locked for Faculty) */}
-              <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-xl bg-primary/5 border border-primary/20 text-xs self-start sm:self-auto">
+              <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-xl glass border border-white/30 dark:border-white/10 text-xs self-start sm:self-auto">
                 <ShieldCheck size={14} className="text-primary shrink-0" />
                 <div className="text-[11px] leading-tight">
                   <span className="text-[10px] uppercase font-mono tracking-wider text-muted-foreground font-semibold block">
@@ -942,8 +1144,8 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
                 onClick={() => setActiveDialogTab("overview")}
                 className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-medium transition-all ${
                   activeDialogTab === "overview"
-                    ? "bg-primary text-white shadow-md shadow-primary/20 font-semibold"
-                    : "bg-muted/40 hover:bg-muted/70 text-muted-foreground hover:text-foreground"
+                    ? "bg-primary text-primary-foreground shadow-md shadow-primary/20 font-semibold"
+                    : "glass border border-white/20 dark:border-white/10 hover:bg-white/40 dark:hover:bg-white/10 text-muted-foreground hover:text-foreground"
                 }`}
               >
                 <Sliders size={13} />
@@ -955,8 +1157,8 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
                 onClick={() => setActiveDialogTab("statement")}
                 className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-medium transition-all ${
                   activeDialogTab === "statement"
-                    ? "bg-primary text-white shadow-md shadow-primary/20 font-semibold"
-                    : "bg-muted/40 hover:bg-muted/70 text-muted-foreground hover:text-foreground"
+                    ? "bg-primary text-primary-foreground shadow-md shadow-primary/20 font-semibold"
+                    : "glass border border-white/20 dark:border-white/10 hover:bg-white/40 dark:hover:bg-white/10 text-muted-foreground hover:text-foreground"
                 }`}
               >
                 <BookOpen size={13} />
@@ -968,8 +1170,8 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
                 onClick={() => setActiveDialogTab("code")}
                 className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-medium transition-all ${
                   activeDialogTab === "code"
-                    ? "bg-primary text-white shadow-md shadow-primary/20 font-semibold"
-                    : "bg-muted/40 hover:bg-muted/70 text-muted-foreground hover:text-foreground"
+                    ? "bg-primary text-primary-foreground shadow-md shadow-primary/20 font-semibold"
+                    : "glass border border-white/20 dark:border-white/10 hover:bg-white/40 dark:hover:bg-white/10 text-muted-foreground hover:text-foreground"
                 }`}
               >
                 <Code2 size={13} />
@@ -985,6 +1187,165 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
             {/* ───────────────────────────────────────────────────────────────── */}
             {activeDialogTab === "overview" && (
               <div className="space-y-5 animate-in fade-in-50 duration-200">
+                {/* ── DRAG & DROP OCR QUESTION EXTRACTOR ── */}
+                <div className="relative rounded-2xl p-4 bg-gradient-to-r from-primary/10 via-purple-500/10 to-primary/5 border border-white/40 dark:border-white/10 shadow-sm overflow-hidden">
+                  <input
+                    ref={ocrFileInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) handleOcrFile(file);
+                      e.target.value = "";
+                    }}
+                  />
+
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <div className="w-8 h-8 rounded-xl bg-primary/20 text-primary flex items-center justify-center shrink-0">
+                        <Sparkles size={16} />
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-semibold text-foreground flex items-center gap-2">
+                          AI & OCR Question Auto-Extractor
+                          <Badge variant="outline" className="text-[9px] py-0 px-2 bg-primary/15 text-primary border-primary/30 font-medium">
+                            Drag & Drop Ready
+                          </Badge>
+                        </h4>
+                        <p className="text-[11px] text-muted-foreground">
+                          Drop an assignment screenshot, problem photo, or exam question to auto-fill title, description, constraints & test cases.
+                        </p>
+                      </div>
+                    </div>
+
+                    {ocrRawText && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => setShowRawOcr(!showRawOcr)}
+                        className="h-7 px-2 text-[11px] text-primary hover:bg-primary/10 rounded-lg gap-1"
+                      >
+                        <FileText size={12} />
+                        <span>{showRawOcr ? "Hide Raw OCR" : "View Raw OCR"}</span>
+                      </Button>
+                    )}
+                  </div>
+
+                  <div
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      setDragOver(true);
+                    }}
+                    onDragLeave={() => setDragOver(false)}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      setDragOver(false);
+                      const file = e.dataTransfer.files?.[0];
+                      if (file) handleOcrFile(file);
+                    }}
+                    onClick={() => ocrFileInputRef.current?.click()}
+                    className={`group cursor-pointer rounded-xl border-2 border-dashed p-4 text-center transition-all ${
+                      dragOver
+                        ? "border-primary bg-primary/20 ring-2 ring-primary/30"
+                        : "border-primary/30 hover:border-primary/60 bg-white/50 dark:bg-white/5 hover:bg-white/70 dark:hover:bg-white/10"
+                    }`}
+                  >
+                    {ocrLoading ? (
+                      <div className="py-3 flex flex-col items-center justify-center gap-2">
+                        <RefreshCw size={22} className="animate-spin text-primary" />
+                        <span className="text-xs font-semibold text-foreground">{ocrStatus}</span>
+                        <div className="w-full max-w-xs h-2 bg-muted/60 rounded-full overflow-hidden border border-white/20">
+                          <div
+                            className="h-full bg-gradient-to-r from-primary to-purple-600 transition-all duration-300"
+                            style={{ width: `${ocrProgress}%` }}
+                          />
+                        </div>
+                        <span className="text-[10px] font-mono text-muted-foreground">{ocrProgress}% complete</span>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col sm:flex-row items-center justify-center gap-3 py-1.5">
+                        <div className="w-10 h-10 rounded-xl bg-primary/15 text-primary flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
+                          <UploadCloud size={20} />
+                        </div>
+                        <div className="text-center sm:text-left">
+                          <p className="text-xs font-semibold text-foreground">
+                            Drop question screenshot here, or <span className="text-primary underline font-bold">browse image</span>
+                          </p>
+                          <p className="text-[11px] text-muted-foreground mt-0.5">
+                            Supports PNG, JPG, JPEG, WebP. High accuracy engine parses problem statement, inputs, outputs, and semester.
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {showRawOcr && ocrRawText && (
+                    <div className="mt-3 p-3 rounded-xl bg-card/90 border border-white/30 dark:border-white/10 space-y-1.5 animate-in fade-in-50">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[11px] font-semibold text-foreground flex items-center gap-1">
+                          <FileText size={12} className="text-primary" /> Raw Extracted Text
+                        </span>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            navigator.clipboard.writeText(ocrRawText);
+                            toast({ title: "Copied to clipboard" });
+                          }}
+                          className="h-6 px-2 text-[10px] rounded-md gap-1"
+                        >
+                          <Copy size={11} />
+                          <span>Copy</span>
+                        </Button>
+                      </div>
+                      <Textarea
+                        rows={4}
+                        value={ocrRawText}
+                        readOnly
+                        className="text-[11px] font-mono bg-background/50 border-white/20"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                {/* Target Semester Selector for Specific Students */}
+                <div className="space-y-1.5 p-3.5 rounded-xl glass bg-white/40 dark:bg-white/5 border border-white/30 dark:border-white/10">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
+                      <GraduationCap size={14} className="text-primary" />
+                      Target Semester (Student Cohort Access)
+                    </Label>
+                    <Badge
+                      variant="outline"
+                      className="text-[10px] border-primary/30 text-primary bg-primary/10 font-mono font-medium"
+                    >
+                      {targetSemester === "All" ? "All Semesters Eligible" : `Visible to ${targetSemester} Students Only`}
+                    </Badge>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground">
+                    Specify which semester students can see and attempt this challenge in their portal.
+                  </p>
+                  <div className="grid grid-cols-3 sm:grid-cols-9 gap-1.5 pt-1.5">
+                    {SEMESTER_PRESETS.map((sem) => (
+                      <button
+                        key={sem}
+                        type="button"
+                        onClick={() => setTargetSemester(sem)}
+                        className={`py-1.5 px-2 rounded-xl text-xs font-medium transition-all text-center ${
+                          targetSemester === sem
+                            ? "bg-primary text-primary-foreground shadow-sm font-semibold ring-1 ring-primary/40"
+                            : "glass border border-white/30 dark:border-white/10 hover:bg-white/60 dark:hover:bg-white/10 text-muted-foreground hover:text-foreground"
+                        }`}
+                      >
+                        {sem}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 {/* Title & Topic */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-1.5">
@@ -995,7 +1356,7 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
                       value={title}
                       onChange={(e) => setTitle(e.target.value)}
                       placeholder="e.g. Reverse a Linked List, Two Sum"
-                      className="h-9 text-xs rounded-xl bg-background/60 border-border/50 focus-visible:ring-primary/30"
+                      className="h-9 text-xs rounded-xl bg-white/70 dark:bg-white/5 border border-white/30 dark:border-white/10 focus-visible:ring-primary/30"
                     />
                     <p className="text-[11px] text-muted-foreground">
                       A clear, concise name that describes the core algorithmic objective.
@@ -1010,7 +1371,7 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
                       value={category}
                       onChange={(e) => setCategory(e.target.value)}
                       placeholder="e.g. Algorithms, Data Structures"
-                      className="h-9 text-xs rounded-xl bg-background/60 border-border/50 focus-visible:ring-primary/30"
+                      className="h-9 text-xs rounded-xl bg-white/70 dark:bg-white/5 border border-white/30 dark:border-white/10 focus-visible:ring-primary/30"
                     />
                     {/* Quick Category Chips */}
                     <div className="flex flex-wrap gap-1.5 pt-1">
@@ -1022,7 +1383,7 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
                           className={`text-[10px] px-2 py-0.5 rounded-md transition-all ${
                             category === cat
                               ? "bg-primary/20 text-primary border border-primary/30 font-medium"
-                              : "bg-muted/40 text-muted-foreground hover:text-foreground hover:bg-muted/70"
+                              : "glass border border-white/20 dark:border-white/10 text-muted-foreground hover:text-foreground hover:bg-white/60 dark:hover:bg-white/10"
                           }`}
                         >
                           {cat}
@@ -1043,13 +1404,13 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
                       onClick={() => setDifficulty("Easy")}
                       className={`p-3 rounded-xl border text-left transition-all ${
                         difficulty === "Easy"
-                          ? "border-emerald-500 bg-emerald-500/10 ring-1 ring-emerald-500/30"
-                          : "border-border/50 bg-background/40 hover:bg-muted/30"
+                          ? "border-emerald-500/50 bg-emerald-500/15 ring-1 ring-emerald-500/30"
+                          : "border-white/30 dark:border-white/10 bg-white/40 dark:bg-white/5 hover:bg-white/60 dark:hover:bg-white/10"
                       }`}
                     >
                       <div className="flex items-center justify-between">
-                        <span className="font-semibold text-xs text-emerald-500">🟢 Easy</span>
-                        {difficulty === "Easy" && <Check size={14} className="text-emerald-500" />}
+                        <span className="font-semibold text-xs text-emerald-800 dark:text-emerald-300">🟢 Easy</span>
+                        {difficulty === "Easy" && <Check size={14} className="text-emerald-700 dark:text-emerald-300" />}
                       </div>
                       <p className="text-[10px] text-muted-foreground mt-1">
                         Foundational logic, arrays & simple loops.
@@ -1061,13 +1422,13 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
                       onClick={() => setDifficulty("Medium")}
                       className={`p-3 rounded-xl border text-left transition-all ${
                         difficulty === "Medium"
-                          ? "border-amber-500 bg-amber-500/10 ring-1 ring-amber-500/30"
-                          : "border-border/50 bg-background/40 hover:bg-muted/30"
+                          ? "border-amber-500/50 bg-amber-500/15 ring-1 ring-amber-500/30"
+                          : "border-white/30 dark:border-white/10 bg-white/40 dark:bg-white/5 hover:bg-white/60 dark:hover:bg-white/10"
                       }`}
                     >
                       <div className="flex items-center justify-between">
-                        <span className="font-semibold text-xs text-amber-500">🟡 Medium</span>
-                        {difficulty === "Medium" && <Check size={14} className="text-amber-500" />}
+                        <span className="font-semibold text-xs text-amber-800 dark:text-amber-300">🟡 Medium</span>
+                        {difficulty === "Medium" && <Check size={14} className="text-amber-700 dark:text-amber-300" />}
                       </div>
                       <p className="text-[10px] text-muted-foreground mt-1">
                         Requires optimization, hashing, recursion.
@@ -1079,13 +1440,13 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
                       onClick={() => setDifficulty("Hard")}
                       className={`p-3 rounded-xl border text-left transition-all ${
                         difficulty === "Hard"
-                          ? "border-rose-500 bg-rose-500/10 ring-1 ring-rose-500/30"
-                          : "border-border/50 bg-background/40 hover:bg-muted/30"
+                          ? "border-rose-500/50 bg-rose-500/15 ring-1 ring-rose-500/30"
+                          : "border-white/30 dark:border-white/10 bg-white/40 dark:bg-white/5 hover:bg-white/60 dark:hover:bg-white/10"
                       }`}
                     >
                       <div className="flex items-center justify-between">
-                        <span className="font-semibold text-xs text-rose-500">🔴 Hard</span>
-                        {difficulty === "Hard" && <Check size={14} className="text-rose-500" />}
+                        <span className="font-semibold text-xs text-rose-800 dark:text-rose-300">🔴 Hard</span>
+                        {difficulty === "Hard" && <Check size={14} className="text-rose-700 dark:text-rose-300" />}
                       </div>
                       <p className="text-[10px] text-muted-foreground mt-1">
                         Complex DP, graphs, strict time/space limits.
@@ -1097,7 +1458,7 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
                 {/* Points Awarded & Publication Visibility */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
                   {/* Points */}
-                  <div className="space-y-1.5 p-3.5 rounded-xl bg-background/50 border border-border/40">
+                  <div className="space-y-1.5 p-3.5 rounded-xl bg-white/40 dark:bg-white/5 border border-white/30 dark:border-white/10">
                     <div className="flex items-center justify-between">
                       <Label className="text-xs font-semibold text-foreground">
                         Points Awarded on Solve
@@ -1114,8 +1475,8 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
                           onClick={() => setPoints(pts)}
                           className={`flex-1 py-1 text-xs rounded-lg transition-all font-mono ${
                             points === pts
-                              ? "bg-primary text-white font-bold"
-                              : "bg-muted/40 text-muted-foreground hover:bg-muted/70 hover:text-foreground"
+                              ? "bg-primary text-primary-foreground font-bold"
+                              : "glass border border-white/20 dark:border-white/10 text-muted-foreground hover:bg-white/60 dark:hover:bg-white/10 hover:text-foreground"
                           }`}
                         >
                           {pts}
@@ -1127,14 +1488,14 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
                         type="number"
                         value={points}
                         onChange={(e) => setPoints(Number(e.target.value))}
-                        className="h-8 text-xs font-mono rounded-lg bg-background/60"
+                        className="h-8 text-xs font-mono rounded-lg bg-white/70 dark:bg-white/5 border border-white/30 dark:border-white/10"
                         placeholder="Custom points value..."
                       />
                     </div>
                   </div>
 
                   {/* Public Live Switch */}
-                  <div className="space-y-2 p-3.5 rounded-xl bg-background/50 border border-border/40 flex flex-col justify-between">
+                  <div className="space-y-2 p-3.5 rounded-xl bg-white/40 dark:bg-white/5 border border-white/30 dark:border-white/10 flex flex-col justify-between">
                     <div>
                       <div className="flex items-center justify-between">
                         <Label className="text-xs font-semibold text-foreground">
@@ -1144,8 +1505,8 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
                           variant="outline"
                           className={
                             isPublished
-                              ? "text-emerald-500 border-emerald-500/30 bg-emerald-500/10 text-[10px]"
-                              : "text-amber-500 border-amber-500/30 bg-amber-500/10 text-[10px]"
+                              ? "text-emerald-800 dark:text-emerald-300 border-emerald-500/40 bg-emerald-500/15 text-[10px] font-medium"
+                              : "text-amber-800 dark:text-amber-300 border-amber-500/40 bg-amber-500/15 text-[10px] font-medium"
                           }
                         >
                           {isPublished ? "Live Public" : "Private Draft"}
@@ -1153,12 +1514,12 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
                       </div>
                       <p className="text-[11px] text-muted-foreground mt-1">
                         {isPublished
-                          ? "This challenge will be visible to all students immediately upon saving."
+                          ? "This challenge will be visible to students in the designated semester."
                           : "Saved as draft. Only you can view, edit, or test this question."}
                       </p>
                     </div>
 
-                    <div className="flex items-center justify-between pt-2 border-t border-border/30">
+                    <div className="flex items-center justify-between pt-2 border-t border-white/20 dark:border-white/10">
                       <span className="text-xs text-foreground font-medium">
                         Publish to Student Coding Hub
                       </span>
@@ -1172,7 +1533,7 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
                 </div>
 
                 {/* Author Card: Strictly locked for Faculty */}
-                <div className="p-3.5 rounded-xl bg-muted/20 border border-border/40 flex items-center justify-between gap-4">
+                <div className="p-3.5 rounded-xl bg-white/40 dark:bg-white/5 border border-white/30 dark:border-white/10 flex items-center justify-between gap-4">
                   <div className="flex items-center gap-3">
                     <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
                       <ShieldCheck size={16} />
@@ -1186,7 +1547,7 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
                           value={publishedBy}
                           onChange={(e) => setPublishedBy(e.target.value)}
                           placeholder="Faculty Member Name"
-                          className="h-7 text-xs mt-1 w-56 font-medium"
+                          className="h-7 text-xs mt-1 w-56 font-medium bg-white/70 dark:bg-white/5 border border-white/30 dark:border-white/10"
                         />
                       ) : (
                         <p className="text-xs font-semibold text-foreground">
@@ -1236,7 +1597,7 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
                     placeholder="Describe the task, input formats, expected outputs, and mathematical rules..."
-                    className="text-xs font-sans leading-relaxed rounded-xl bg-background/60 border-border/50 focus-visible:ring-primary/30 p-3"
+                    className="text-xs font-sans leading-relaxed rounded-xl bg-white/70 dark:bg-white/5 border border-white/30 dark:border-white/10 focus-visible:ring-primary/30 p-3"
                   />
                   <p className="text-[11px] text-muted-foreground">
                     Supports Markdown formatting (headings, code blocks, bold, lists).
@@ -1259,7 +1620,7 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
                     value={constraintsText}
                     onChange={(e) => setConstraintsText(e.target.value)}
                     placeholder={"1 <= nums.length <= 10^4\n-10^9 <= nums[i] <= 10^9\nTime Limit: 2.0s"}
-                    className="text-xs font-mono rounded-xl bg-background/60 border-border/50 focus-visible:ring-primary/30 p-3"
+                    className="text-xs font-mono rounded-xl bg-white/70 dark:bg-white/5 border border-white/30 dark:border-white/10 focus-visible:ring-primary/30 p-3"
                   />
                   {/* Constraints pills preview */}
                   {constraintsText.trim() && (
@@ -1271,7 +1632,7 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
                         .map((c, i) => (
                           <span
                             key={i}
-                            className="px-2 py-0.5 rounded-md bg-muted/60 text-foreground/80 font-mono text-[10px] border border-border/40"
+                            className="px-2 py-0.5 rounded-md glass bg-white/40 dark:bg-white/5 text-foreground font-mono text-[10px] border border-white/30 dark:border-white/10"
                           >
                             {c}
                           </span>
@@ -1290,7 +1651,7 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
                     value={tagsText}
                     onChange={(e) => setTagsText(e.target.value)}
                     placeholder="e.g. Array, Two Pointers, Hash Table"
-                    className="h-9 text-xs rounded-xl bg-background/60 border-border/50 focus-visible:ring-primary/30"
+                    className="h-9 text-xs rounded-xl bg-white/70 dark:bg-white/5 border border-white/30 dark:border-white/10 focus-visible:ring-primary/30"
                   />
                   <div className="flex flex-wrap gap-1.5 pt-1">
                     {TAG_PRESETS.map((tag) => (
@@ -1306,7 +1667,7 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
                             setTagsText([...currentTags, tag].join(", "));
                           }
                         }}
-                        className="text-[10px] px-2 py-0.5 rounded-md bg-muted/40 hover:bg-muted/80 text-muted-foreground hover:text-foreground transition-all"
+                        className="text-[10px] px-2 py-0.5 rounded-md glass border border-white/20 dark:border-white/10 hover:bg-white/60 dark:hover:bg-white/10 text-muted-foreground hover:text-foreground transition-all"
                       >
                         +{tag}
                       </button>
@@ -1329,13 +1690,13 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
                       Starter Code Templates for Students
                     </Label>
                     {/* Language selector chips */}
-                    <div className="flex items-center gap-1 rounded-xl bg-muted/60 p-1 border border-border/40 text-xs">
+                    <div className="flex items-center gap-1 rounded-xl glass p-1 border border-white/30 dark:border-white/10 text-xs">
                       <button
                         type="button"
                         onClick={() => setActiveCodeLang("python")}
                         className={`px-3 py-1 rounded-lg text-xs transition-all ${
                           activeCodeLang === "python"
-                            ? "bg-background text-foreground font-semibold shadow-xs"
+                            ? "bg-primary text-primary-foreground font-semibold shadow-xs"
                             : "text-muted-foreground hover:text-foreground"
                         }`}
                       >
@@ -1346,7 +1707,7 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
                         onClick={() => setActiveCodeLang("javascript")}
                         className={`px-3 py-1 rounded-lg text-xs transition-all ${
                           activeCodeLang === "javascript"
-                            ? "bg-background text-foreground font-semibold shadow-xs"
+                            ? "bg-primary text-primary-foreground font-semibold shadow-xs"
                             : "text-muted-foreground hover:text-foreground"
                         }`}
                       >
@@ -1357,7 +1718,7 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
                         onClick={() => setActiveCodeLang("cpp")}
                         className={`px-3 py-1 rounded-lg text-xs transition-all ${
                           activeCodeLang === "cpp"
-                            ? "bg-background text-foreground font-semibold shadow-xs"
+                            ? "bg-primary text-primary-foreground font-semibold shadow-xs"
                             : "text-muted-foreground hover:text-foreground"
                         }`}
                       >
@@ -1367,7 +1728,7 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
                   </div>
 
                   {/* Dark code editor box */}
-                  <div className="rounded-xl border border-border/60 bg-zinc-950 p-3 shadow-inner space-y-2">
+                  <div className="rounded-xl border border-white/20 dark:border-white/10 bg-zinc-950 p-3 shadow-inner space-y-2">
                     <div className="flex items-center justify-between text-[11px] text-zinc-400 pb-1 border-b border-zinc-800">
                       <span className="font-mono">
                         {activeCodeLang === "python" && "main.py"}
@@ -1421,13 +1782,13 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
                 </div>
 
                 {/* ── Sample Test Case (Public to Students) ── */}
-                <div className="p-4 rounded-xl bg-background/50 border border-emerald-500/20 space-y-3">
+                <div className="p-4 rounded-xl bg-emerald-500/5 border border-emerald-500/30 space-y-3">
                   <div className="flex items-center justify-between">
-                    <Label className="text-xs font-semibold text-emerald-500 flex items-center gap-1.5">
+                    <Label className="text-xs font-semibold text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
                       <CheckCircle2 size={14} />
                       Sample Test Case (Public to Students)
                     </Label>
-                    <Badge variant="outline" className="text-[10px] border-emerald-500/30 text-emerald-500 bg-emerald-500/5">
+                    <Badge variant="outline" className="text-[10px] border-emerald-500/40 text-emerald-800 dark:text-emerald-300 bg-emerald-500/15 font-medium">
                       Visible in problem description
                     </Badge>
                   </div>
@@ -1439,8 +1800,8 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
                         rows={3}
                         value={sampleInput}
                         onChange={(e) => setSampleInput(e.target.value)}
-                        placeholder="4 9\n2 7 11 15"
-                        className="text-xs font-mono rounded-lg bg-background/60"
+                        placeholder={"4 9\n2 7 11 15"}
+                        className="text-xs font-mono rounded-lg bg-white/70 dark:bg-white/5 border border-white/30 dark:border-white/10"
                       />
                     </div>
                     <div className="space-y-1">
@@ -1450,7 +1811,7 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
                         value={sampleOutput}
                         onChange={(e) => setSampleOutput(e.target.value)}
                         placeholder="0 1"
-                        className="text-xs font-mono rounded-lg bg-background/60"
+                        className="text-xs font-mono rounded-lg bg-white/70 dark:bg-white/5 border border-white/30 dark:border-white/10"
                       />
                     </div>
                   </div>
@@ -1461,19 +1822,19 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
                       value={sampleExplanation}
                       onChange={(e) => setSampleExplanation(e.target.value)}
                       placeholder="Because nums[0] + nums[1] == 9, we return 0 1."
-                      className="h-8 text-xs rounded-lg bg-background/60"
+                      className="h-8 text-xs rounded-lg bg-white/70 dark:bg-white/5 border border-white/30 dark:border-white/10"
                     />
                   </div>
                 </div>
 
                 {/* ── Hidden Evaluation Test Case (Private for Scoring) ── */}
-                <div className="p-4 rounded-xl bg-background/50 border border-amber-500/20 space-y-3">
+                <div className="p-4 rounded-xl bg-amber-500/5 border border-amber-500/30 space-y-3">
                   <div className="flex items-center justify-between">
-                    <Label className="text-xs font-semibold text-amber-500 flex items-center gap-1.5">
+                    <Label className="text-xs font-semibold text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
                       <Lock size={14} />
                       Hidden Evaluation Test Case (For Automated Grading)
                     </Label>
-                    <Badge variant="outline" className="text-[10px] border-amber-500/30 text-amber-500 bg-amber-500/5">
+                    <Badge variant="outline" className="text-[10px] border-amber-500/40 text-amber-800 dark:text-amber-300 bg-amber-500/15 font-medium">
                       Private Judge Test Case
                     </Badge>
                   </div>
@@ -1489,8 +1850,8 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
                         rows={3}
                         value={hiddenInput}
                         onChange={(e) => setHiddenInput(e.target.value)}
-                        placeholder="3 6\n3 2 4"
-                        className="text-xs font-mono rounded-lg bg-background/60"
+                        placeholder={"3 6\n3 2 4"}
+                        className="text-xs font-mono rounded-lg bg-white/70 dark:bg-white/5 border border-white/30 dark:border-white/10"
                       />
                     </div>
                     <div className="space-y-1">
@@ -1500,7 +1861,7 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
                         value={hiddenOutput}
                         onChange={(e) => setHiddenOutput(e.target.value)}
                         placeholder="1 2"
-                        className="text-xs font-mono rounded-lg bg-background/60"
+                        className="text-xs font-mono rounded-lg bg-white/70 dark:bg-white/5 border border-white/30 dark:border-white/10"
                       />
                     </div>
                   </div>
@@ -1510,7 +1871,7 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
           </div>
 
           {/* Modal Footer Controls */}
-          <DialogFooter className="p-4 border-t border-border/40 bg-background/70 shrink-0 flex flex-row items-center justify-between">
+          <DialogFooter className="p-4 border-t border-white/20 dark:border-white/10 glass bg-card/90 shrink-0 flex flex-row items-center justify-between">
             <div className="flex items-center gap-2">
               {activeDialogTab !== "overview" && (
                 <Button
@@ -1521,7 +1882,7 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
                     if (activeDialogTab === "code") setActiveDialogTab("statement");
                     else if (activeDialogTab === "statement") setActiveDialogTab("overview");
                   }}
-                  className="text-xs rounded-xl gap-1"
+                  className="text-xs rounded-xl gap-1 glass border-white/30 dark:border-white/10"
                 >
                   <ArrowLeft size={13} />
                   <span>Back</span>
@@ -1537,7 +1898,7 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
                     if (activeDialogTab === "overview") setActiveDialogTab("statement");
                     else if (activeDialogTab === "statement") setActiveDialogTab("code");
                   }}
-                  className="text-xs rounded-xl gap-1"
+                  className="text-xs rounded-xl gap-1 glass border-white/30 dark:border-white/10"
                 >
                   <span>Next</span>
                   <ArrowRight size={13} />

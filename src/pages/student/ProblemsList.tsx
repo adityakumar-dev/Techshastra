@@ -19,6 +19,7 @@ import {
   TrendingUp,
   Tag,
   BookOpen,
+  GraduationCap,
 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -35,6 +36,7 @@ export const ProblemsList: React.FC = () => {
   const [search, setSearch] = useState("");
   const [difficultyFilter, setDifficultyFilter] = useState<string>("All");
   const [statusFilter, setStatusFilter] = useState<string>("All");
+  const [semesterFilter, setSemesterFilter] = useState<string>("All");
   const [selectedTag, setSelectedTag] = useState<string>("All");
 
   useEffect(() => {
@@ -91,6 +93,13 @@ export const ProblemsList: React.FC = () => {
       const matchesDifficulty =
         difficultyFilter === "All" || p.difficulty === difficultyFilter;
 
+      // Semester
+      const matchesSemester =
+        semesterFilter === "All" ||
+        !p.targetSemester ||
+        p.targetSemester === "All" ||
+        p.targetSemester === semesterFilter;
+
       // Status
       const isSolved = solvedProblemIds.has(p.id);
       const isAttempted = attemptedProblemIds.has(p.id);
@@ -104,12 +113,13 @@ export const ProblemsList: React.FC = () => {
       const matchesTag =
         selectedTag === "All" || p.tags.includes(selectedTag);
 
-      return matchesSearch && matchesDifficulty && matchesStatus && matchesTag;
+      return matchesSearch && matchesDifficulty && matchesSemester && matchesStatus && matchesTag;
     });
   }, [
     problems,
     search,
     difficultyFilter,
+    semesterFilter,
     statusFilter,
     selectedTag,
     solvedProblemIds,
@@ -119,11 +129,11 @@ export const ProblemsList: React.FC = () => {
   const getDifficultyColor = (diff: Problem["difficulty"]) => {
     switch (diff) {
       case "Easy":
-        return "text-emerald-500 bg-emerald-500/10 border-emerald-500/20";
+        return "text-emerald-800 dark:text-emerald-300 bg-emerald-500/15 border-emerald-500/40 font-medium";
       case "Medium":
-        return "text-amber-500 bg-amber-500/10 border-amber-500/20";
+        return "text-amber-800 dark:text-amber-300 bg-amber-500/15 border-amber-500/40 font-medium";
       case "Hard":
-        return "text-rose-500 bg-rose-500/10 border-rose-500/20";
+        return "text-rose-800 dark:text-rose-300 bg-rose-500/15 border-rose-500/40 font-medium";
     }
   };
 
@@ -168,15 +178,36 @@ export const ProblemsList: React.FC = () => {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {/* Semester Filter */}
+          <div className="flex items-center rounded-xl glass border border-white/30 dark:border-white/10 p-1 text-xs overflow-x-auto">
+            <span className="text-[10px] text-muted-foreground font-semibold px-2 flex items-center gap-1 shrink-0">
+              <GraduationCap size={12} className="text-primary" />
+              Cohort:
+            </span>
+            {["All", "Sem 1", "Sem 2", "Sem 3", "Sem 4", "Sem 5", "Sem 6", "Sem 7", "Sem 8"].map((sem) => (
+              <button
+                key={sem}
+                onClick={() => setSemesterFilter(sem)}
+                className={`px-2 py-0.5 rounded-lg text-[11px] transition-all shrink-0 ${
+                  semesterFilter === sem
+                    ? "bg-primary text-primary-foreground font-semibold shadow-xs"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {sem}
+              </button>
+            ))}
+          </div>
+
           {/* Difficulty Filter */}
-          <div className="flex items-center rounded-xl bg-foreground/5 p-1 text-xs">
+          <div className="flex items-center rounded-xl glass border border-white/30 dark:border-white/10 p-1 text-xs">
             {["All", "Easy", "Medium", "Hard"].map((diff) => (
               <button
                 key={diff}
                 onClick={() => setDifficultyFilter(diff)}
                 className={`px-2.5 py-1 rounded-lg transition-all ${
                   difficultyFilter === diff
-                    ? "bg-background text-foreground font-medium shadow-xs"
+                    ? "bg-primary text-primary-foreground font-medium shadow-xs"
                     : "text-muted-foreground hover:text-foreground"
                 }`}
               >
@@ -186,14 +217,14 @@ export const ProblemsList: React.FC = () => {
           </div>
 
           {/* Status Filter */}
-          <div className="flex items-center rounded-xl bg-foreground/5 p-1 text-xs">
+          <div className="flex items-center rounded-xl glass border border-white/30 dark:border-white/10 p-1 text-xs">
             {["All", "Solved", "Unsolved"].map((st) => (
               <button
                 key={st}
                 onClick={() => setStatusFilter(st)}
                 className={`px-2.5 py-1 rounded-lg transition-all ${
                   statusFilter === st
-                    ? "bg-background text-foreground font-medium shadow-xs"
+                    ? "bg-primary text-primary-foreground font-medium shadow-xs"
                     : "text-muted-foreground hover:text-foreground"
                 }`}
               >
@@ -293,6 +324,15 @@ export const ProblemsList: React.FC = () => {
                       >
                         {prob.difficulty}
                       </Badge>
+
+                      <Badge
+                        variant="outline"
+                        className="text-[10px] px-2 py-0.5 border-purple-500/30 text-purple-800 dark:text-purple-300 bg-purple-500/10 font-medium flex items-center gap-1"
+                      >
+                        <GraduationCap size={11} />
+                        {prob.targetSemester && prob.targetSemester !== "All" ? prob.targetSemester : "All Semesters"}
+                      </Badge>
+
                       <span className="text-[10px] text-muted-foreground font-mono">
                         +{prob.points} pts
                       </span>

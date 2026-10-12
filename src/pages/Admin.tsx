@@ -597,7 +597,14 @@ const Admin = ({ userRole }: AdminProps) => {
 
   const fetchRepoMetadata = async (url: string) => {
     const gitInfo = parseGitHubUrl(url);
-    if (!gitInfo) return;
+    if (!gitInfo) {
+      toast({
+        title: "Invalid URL",
+        description: "Please enter a valid GitHub repository URL (e.g. https://github.com/owner/repo)",
+        variant: "destructive"
+      });
+      return;
+    }
 
     setIsFetching(true);
     try {
@@ -606,22 +613,54 @@ const Admin = ({ userRole }: AdminProps) => {
         fetch(`https://api.github.com/repos/${gitInfo.owner}/${gitInfo.repo}/readme`).catch(() => null),
       ]);
 
-      if (!repoRes.ok) throw new Error("Repo not found");
+      const inferredTitle = gitInfo.repo
+        .replace(/-/g, " ")
+        .replace(/_/g, " ")
+        .replace(/\w\S*/g, (txt: string) => txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase());
+
+      if (!repoRes.ok) {
+        // Fallback gracefully (e.g. GitHub unauthenticated rate limit or public repo)
+        const autoImage = generateProjectImage(inferredTitle, `A project by ${gitInfo.owner}`, "GitHub");
+        setFormData(prev => ({
+          ...prev,
+          github: url,
+          title: prev.title || inferredTitle,
+          description: prev.description || `Open source project "${inferredTitle}" by ${gitInfo.owner}.`,
+          image: prev.image || autoImage,
+        }));
+        toast({
+          title: "Repo Parsed",
+          description: `Imported project "${inferredTitle}". (GitHub API rate-limited; fields populated from repo name).`
+        });
+        return;
+      }
+
       const data = await repoRes.json();
 
       let readmeDescription = "";
       if (readmeRes && readmeRes.ok) {
-        const readmeData = await readmeRes.json();
-        const decoded = atob(readmeData.content.replace(/\n/g, ""));
-        const plainText = decoded
-          .replace(/#{1,6}\s+.*/g, "")
-          .replace(/!\[.*?\]\(.*?\)/g, "")
-          .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
-          .replace(/[`*_~]/g, "")
-          .replace(/<!--[\s\S]*?-->/g, "")
-          .trim();
-        const firstParagraph = plainText.split(/\n{2,}/).find(p => p.trim().length > 30);
-        if (firstParagraph) readmeDescription = firstParagraph.trim().replace(/\n/g, " ").slice(0, 300);
+        try {
+          const readmeData = await readmeRes.json();
+          let decoded = "";
+          try {
+            const binaryString = atob((readmeData.content || "").replace(/\s/g, ""));
+            const bytes = Uint8Array.from(binaryString, (c) => c.charCodeAt(0));
+            decoded = new TextDecoder().decode(bytes);
+          } catch (_e) {
+            decoded = atob((readmeData.content || "").replace(/\s/g, ""));
+          }
+          const plainText = decoded
+            .replace(/#{1,6}\s+.*/g, "")
+            .replace(/!\[.*?\]\(.*?\)/g, "")
+            .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+            .replace(/[`*_~]/g, "")
+            .replace(/<!--[\s\S]*?-->/g, "")
+            .trim();
+          const firstParagraph = plainText.split(/\n{2,}/).find((p: string) => p.trim().length > 30);
+          if (firstParagraph) readmeDescription = firstParagraph.trim().replace(/\n/g, " ").slice(0, 300);
+        } catch (_readmeErr) {
+          // ignore readme parse error, data.description is still available
+        }
       }
 
       let detectedLang: "javascript" | "python" | "other" = "other";
@@ -633,12 +672,14 @@ const Admin = ({ userRole }: AdminProps) => {
       }
 
       const finalTitle = data.name
-        .replace(/-/g, " ")
-        .replace(/_/g, " ")
-        .replace(/\w\S*/g, (txt: string) => txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase());
+        ? data.name
+            .replace(/-/g, " ")
+            .replace(/_/g, " ")
+            .replace(/\w\S*/g, (txt: string) => txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase())
+        : inferredTitle;
 
-      const finalDescription = readmeDescription || data.description || "";
-      const finalTags = data.topics?.join(", ") || (data.language ? data.language : "");
+      const finalDescription = readmeDescription || data.description || `A project by ${gitInfo.owner}.`;
+      const finalTags = data.topics?.length ? data.topics.join(", ") : (data.language ? data.language : "Web, Open Source");
       const autoImage = generateProjectImage(finalTitle, finalDescription, finalTags);
 
       setFormData(prev => ({
@@ -656,11 +697,20 @@ const Admin = ({ userRole }: AdminProps) => {
         description: `Imported details for "${finalTitle}"${readmeDescription ? " (including README)" : ""}. Image auto-generated.`
       });
     } catch (err: any) {
-      console.error("Fetch metadata failed", err);
+      console.error("Fetch metadata error", err);
+      const fallbackTitle = gitInfo.repo
+        .replace(/-/g, " ")
+        .replace(/_/g, " ")
+        .replace(/\w\S*/g, (txt: string) => txt.charAt(0).toUpperCase() + txt.substr(1).toLowerCase());
+      setFormData(prev => ({
+        ...prev,
+        github: url,
+        title: prev.title || fallbackTitle,
+        image: prev.image || generateProjectImage(fallbackTitle, "Project", "GitHub"),
+      }));
       toast({
-        title: "Fetch Failed",
-        description: "Could not retrieve repo details. You may need to enter them manually.",
-        variant: "destructive"
+        title: "Repo Parsed",
+        description: `Populated project title from "${gitInfo.repo}". Please verify fields.`
       });
     } finally {
       setIsFetching(false);
@@ -1298,7 +1348,7 @@ const Admin = ({ userRole }: AdminProps) => {
         )}
 
         <Tabs defaultValue="overview" className="space-y-6" onValueChange={setActiveTab}>
-          <TabsList className="w-full flex overflow-x-auto no-scrollbar scroll-smooth md:flex-wrap h-auto bg-muted/50 p-1.5 gap-1.5 rounded-2xl border border-border/50">
+          <TabsList className="w-full flex overflow-x-auto no-scrollbar scroll-smooth md:flex-wrap h-auto glass bg-white/40 dark:bg-white/5 p-1.5 gap-1.5 rounded-2xl border border-white/30 dark:border-white/10">
             <TabsTrigger value="overview" className="shrink-0 text-xs py-2 px-3 rounded-xl"><LayoutDashboard className="w-3.5 h-3.5 mr-1.5" />Overview</TabsTrigger>
             <TabsTrigger value="projects" className="shrink-0 text-xs py-2 px-3 rounded-xl"><FileText className="w-3.5 h-3.5 mr-1.5 hidden sm:inline" />Projects</TabsTrigger>
             <TabsTrigger value="events" className="shrink-0 text-xs py-2 px-3 rounded-xl"><Calendar className="w-3.5 h-3.5 mr-1.5 hidden sm:inline" />Events</TabsTrigger>
@@ -1376,30 +1426,30 @@ const Admin = ({ userRole }: AdminProps) => {
           {/* ── Projects ── */}
           <TabsContent value="projects">
             <div className="grid lg:grid-cols-3 gap-6">
-              <Card className="lg:col-span-1 h-fit">
+              <Card className="lg:col-span-1 h-fit glass border-white/30 dark:border-white/10 shadow-glass">
                 <CardHeader>
-                  <CardTitle className="flex items-center gap-2">
+                  <CardTitle className="flex items-center gap-2 text-foreground font-heading">
                     <Plus className="w-5 h-5 text-primary" />
                     Add New Project
                   </CardTitle>
-                  <CardDescription>Enter GitHub repository details to add a live project.</CardDescription>
+                  <CardDescription className="text-foreground/70">Enter GitHub repository details to add a live project.</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <form onSubmit={handleSubmit} className="space-y-4">
                     <div className="space-y-4">
                       <div className="space-y-2">
-                        <Label htmlFor="github">GitHub Repository URL</Label>
+                        <Label htmlFor="github" className="text-foreground font-medium text-xs">GitHub Repository URL</Label>
                         <div className="flex gap-2">
                           <div className="relative flex-1">
                             {isFetching ? (
                               <Loader2 className="absolute left-3 top-3 w-4 h-4 text-primary animate-spin" />
                             ) : (
-                              <Github className="absolute left-3 top-3 w-4 h-4 text-muted-foreground" />
+                              <Github className="absolute left-3 top-3 w-4 h-4 text-foreground/50" />
                             )}
                             <Input
                               id="github"
                               placeholder="https://github.com/user/repo"
-                              className="pl-10 h-11"
+                              className="pl-10 h-11 bg-white/80 dark:bg-white/5 border-white/40 dark:border-white/10 text-foreground placeholder:text-foreground/40 shadow-xs focus-visible:ring-primary/20"
                               value={formData.github}
                               onChange={handleInputChange}
                             />
@@ -1409,40 +1459,58 @@ const Admin = ({ userRole }: AdminProps) => {
                             variant="secondary"
                             disabled={isFetching || !formData.github.includes("github.com")}
                             onClick={() => fetchRepoMetadata(formData.github)}
-                            className="h-11 px-4"
+                            className="h-11 px-4 glass border-white/30 dark:border-white/10 font-medium"
                           >
                             Fetch
                           </Button>
                         </div>
-                        <p className="text-[10px] text-muted-foreground italic font-light px-1">
-                          * Paste URL and click Fetch to auto-populate details
+                        <p className="text-[11px] text-foreground/60 italic font-light px-1">
+                          * Paste URL and click Fetch to auto-populate title, description and tech
                         </p>
                       </div>
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="title">Project Title</Label>
-                      <Input id="title" placeholder="Project Name" value={formData.title} onChange={handleInputChange} />
+                      <Label htmlFor="title" className="text-foreground font-medium text-xs">Project Title</Label>
+                      <Input
+                        id="title"
+                        placeholder="Project Name"
+                        value={formData.title}
+                        onChange={handleInputChange}
+                        className="bg-white/80 dark:bg-white/5 border-white/40 dark:border-white/10 text-foreground placeholder:text-foreground/40 shadow-xs focus-visible:ring-primary/20"
+                      />
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="description">Short Description</Label>
-                      <Textarea id="description" placeholder="What does this project do?" value={formData.description} onChange={handleInputChange} />
+                      <Label htmlFor="description" className="text-foreground font-medium text-xs">Short Description</Label>
+                      <Textarea
+                        id="description"
+                        placeholder="What does this project do?"
+                        value={formData.description}
+                        onChange={handleInputChange}
+                        className="bg-white/80 dark:bg-white/5 border-white/40 dark:border-white/10 text-foreground placeholder:text-foreground/40 shadow-xs focus-visible:ring-primary/20"
+                      />
                     </div>
 
-                    <div className="space-y-2 p-4 rounded-lg bg-muted/30 border border-primary/20">
-                      <Label htmlFor="image" className="flex items-center gap-2">
+                    <div className="space-y-2 p-4 rounded-2xl glass border-white/30 dark:border-white/10 bg-white/40 dark:bg-white/5">
+                      <Label htmlFor="image" className="flex items-center gap-2 text-foreground font-medium text-xs">
                         Project Preview Image
-                        <span className="text-[10px] text-muted-foreground font-normal bg-muted px-2 py-0.5 rounded-full">auto-generated if empty</span>
+                        <span className="text-[10px] text-foreground/60 font-normal bg-foreground/5 px-2 py-0.5 rounded-full">auto-generated if empty</span>
                       </Label>
                       <div className="space-y-3">
                         <div className="flex items-center gap-2">
-                          <Input type="file" accept="image/*" onChange={handleImageUpload} className="flex-1" />
-                          <span className="text-xs text-muted-foreground whitespace-nowrap">or</span>
+                          <Input type="file" accept="image/*" onChange={handleImageUpload} className="flex-1 bg-white/80 dark:bg-white/5 border-white/40 dark:border-white/10 text-xs" />
+                          <span className="text-xs text-foreground/60 whitespace-nowrap">or</span>
                         </div>
-                        <Input id="image" placeholder="Paste image URL here" value={formData.image} onChange={handleInputChange} />
+                        <Input
+                          id="image"
+                          placeholder="Paste image URL here"
+                          value={formData.image}
+                          onChange={handleInputChange}
+                          className="bg-white/80 dark:bg-white/5 border-white/40 dark:border-white/10 text-foreground placeholder:text-foreground/40 text-xs shadow-xs"
+                        />
                         {formData.image && (
-                          <div className="relative w-full h-32 rounded-lg overflow-hidden border border-primary/20">
+                          <div className="relative w-full h-32 rounded-xl overflow-hidden glass border-white/30 dark:border-white/10">
                             <img
                               src={formData.image}
                               alt="Preview"
@@ -1452,17 +1520,19 @@ const Admin = ({ userRole }: AdminProps) => {
                           </div>
                         )}
                       </div>
-                      <p className="text-xs text-muted-foreground">
+                      <p className="text-xs text-foreground/60">
                         Optional — if left blank, an image will be auto-generated from the repo name and description.
                       </p>
                     </div>
 
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
-                        <Label htmlFor="language">Execution Tech</Label>
+                        <Label htmlFor="language" className="text-foreground font-medium text-xs">Execution Tech</Label>
                         <Select value={formData.language} onValueChange={(v) => handleSelectChange("language", v)}>
-                          <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
-                          <SelectContent>
+                          <SelectTrigger className="bg-white/80 dark:bg-white/5 border-white/40 dark:border-white/10 text-foreground shadow-xs">
+                            <SelectValue placeholder="Select" />
+                          </SelectTrigger>
+                          <SelectContent className="glass border-white/30 dark:border-white/10">
                             <SelectItem value="javascript">JS / React (StackBlitz)</SelectItem>
                             <SelectItem value="python">Python (Pyodide)</SelectItem>
                             <SelectItem value="other">Other (Static)</SelectItem>
@@ -1470,10 +1540,12 @@ const Admin = ({ userRole }: AdminProps) => {
                         </Select>
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="status">Status</Label>
+                        <Label htmlFor="status" className="text-foreground font-medium text-xs">Status</Label>
                         <Select value={formData.status} onValueChange={(v) => handleSelectChange("status", v)}>
-                          <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
-                          <SelectContent>
+                          <SelectTrigger className="bg-white/80 dark:bg-white/5 border-white/40 dark:border-white/10 text-foreground shadow-xs">
+                            <SelectValue placeholder="Select" />
+                          </SelectTrigger>
+                          <SelectContent className="glass border-white/30 dark:border-white/10">
                             <SelectItem value="Completed">Completed</SelectItem>
                             <SelectItem value="In Progress">In Progress</SelectItem>
                           </SelectContent>
@@ -1483,57 +1555,75 @@ const Admin = ({ userRole }: AdminProps) => {
 
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
-                        <Label htmlFor="lead">Team Lead</Label>
-                        <Input id="lead" placeholder="Lead name" value={formData.lead} onChange={handleInputChange} />
+                        <Label htmlFor="lead" className="text-foreground font-medium text-xs">Team Lead</Label>
+                        <Input
+                          id="lead"
+                          placeholder="Lead name"
+                          value={formData.lead}
+                          onChange={handleInputChange}
+                          className="bg-white/80 dark:bg-white/5 border-white/40 dark:border-white/10 text-foreground shadow-xs"
+                        />
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="designer">UI Designer</Label>
-                        <Input id="designer" placeholder="Designer name" value={formData.designer} onChange={handleInputChange} />
+                        <Label htmlFor="designer" className="text-foreground font-medium text-xs">UI Designer</Label>
+                        <Input
+                          id="designer"
+                          placeholder="Designer name"
+                          value={formData.designer}
+                          onChange={handleInputChange}
+                          className="bg-white/80 dark:bg-white/5 border-white/40 dark:border-white/10 text-foreground shadow-xs"
+                        />
                       </div>
                     </div>
 
                     <div className="space-y-2">
-                      <Label htmlFor="tags">Tags (comma separated)</Label>
-                      <Input id="tags" placeholder="React, AI, IoT" value={formData.tags} onChange={handleInputChange} />
+                      <Label htmlFor="tags" className="text-foreground font-medium text-xs">Tags (comma separated)</Label>
+                      <Input
+                        id="tags"
+                        placeholder="React, AI, IoT"
+                        value={formData.tags}
+                        onChange={handleInputChange}
+                        className="bg-white/80 dark:bg-white/5 border-white/40 dark:border-white/10 text-foreground shadow-xs"
+                      />
                     </div>
 
-                    <Button type="submit" className="w-full">Publish Project</Button>
+                    <Button type="submit" className="w-full shadow-md font-medium tracking-wide">Publish Project</Button>
                   </form>
                 </CardContent>
               </Card>
 
-              <Card className="lg:col-span-2">
+              <Card className="lg:col-span-2 glass border-white/30 dark:border-white/10 shadow-glass">
                 <CardHeader>
-                  <CardTitle>Currently Published Projects</CardTitle>
-                  <CardDescription>A list of projects added by admins via this dashboard.</CardDescription>
+                  <CardTitle className="text-foreground font-heading">Currently Published Projects</CardTitle>
+                  <CardDescription className="text-foreground/70">A list of projects added by admins via this dashboard.</CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
                     {projects.length === 0 ? (
-                      <div className="text-center py-12 border border-dashed rounded-xl">
-                        <p className="text-muted-foreground italic">No admin-added projects yet.</p>
+                      <div className="text-center py-12 glass border-dashed border-white/30 rounded-2xl">
+                        <p className="text-foreground/60 italic font-light">No admin-added projects yet.</p>
                       </div>
                     ) : (
                       projects.map((project) => (
-                        <div key={project.id} className="flex items-center justify-between p-4 border rounded-xl hover:bg-primary/5 transition-colors">
+                        <div key={project.id} className="flex items-center justify-between p-4 glass rounded-2xl border-white/25 dark:border-white/10 hover:bg-white/40 dark:hover:bg-white/5 transition-all">
                           <div className="flex items-center gap-4 flex-1">
-                            <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center">
+                            <div className="w-12 h-12 rounded-xl bg-primary/10 border-white/20 flex items-center justify-center text-primary">
                               {project.github_url?.includes("python") ? <Terminal className="w-6 h-6 text-primary" /> : <Globe className="w-6 h-6 text-primary" />}
                             </div>
                             <div className="flex-1">
-                              <h4 className="font-medium">{project.title}</h4>
-                              <p className="text-xs text-muted-foreground truncate max-w-[300px]">{project.github_url}</p>
+                              <h4 className="font-medium text-foreground">{project.title}</h4>
+                              <p className="text-xs text-foreground/60 truncate max-w-[300px]">{project.github_url}</p>
                               <div className="flex gap-2 mt-1">
-                                <Badge variant="default" className="text-[9px] px-2 py-0">
+                                <Badge variant="default" className="text-[10px] px-2 py-0 font-medium">
                                   {project.tech_stack?.[0] || 'Project'}
                                 </Badge>
-                                <Badge variant="outline" className="text-[9px] px-2 py-0 text-green-600 border-green-600">
+                                <Badge variant="outline" className="text-[10px] px-2 py-0 text-emerald-800 dark:text-emerald-300 border-emerald-500/40 bg-emerald-500/10 font-semibold">
                                   Supabase Persistent
                                 </Badge>
                               </div>
                             </div>
                           </div>
-                          <Button variant="ghost" size="icon" onClick={() => handleDelete(project.id)} className="text-destructive hover:bg-destructive/10">
+                          <Button variant="ghost" size="icon" onClick={() => handleDelete(project.id)} className="text-destructive hover:bg-destructive/10 rounded-xl">
                             <Trash2 className="w-4 h-4" />
                           </Button>
                         </div>

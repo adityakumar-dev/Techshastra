@@ -12,6 +12,17 @@ import type { SupportedLanguage, TestCase } from "./codeExecutionService";
 
 export type ProblemDifficulty = "Easy" | "Medium" | "Hard";
 
+export type TargetSemester =
+  | "All"
+  | "Sem 1"
+  | "Sem 2"
+  | "Sem 3"
+  | "Sem 4"
+  | "Sem 5"
+  | "Sem 6"
+  | "Sem 7"
+  | "Sem 8";
+
 export interface CodingProblem {
   id: string;
   slug: string;
@@ -30,6 +41,8 @@ export interface CodingProblem {
   hiddenTestCases: TestCase[];
   testCases?: TestCase[];
   examples?: { input: string; output: string; explanation?: string }[];
+  /** Which semester students can see this problem. "All" = visible to everyone. */
+  targetSemester?: TargetSemester;
 }
 
 export const PROBLEMS_STORAGE_KEY = "ts_coding_problems";
@@ -148,6 +161,7 @@ function mapRowToProblem(row: any): CodingProblem {
       : getDefaultStarterCode(),
     sampleTestCases: Array.isArray(row.sample_test_cases) ? row.sample_test_cases : [],
     hiddenTestCases: Array.isArray(row.hidden_test_cases) ? row.hidden_test_cases : [],
+    targetSemester: (row.target_semester as TargetSemester) || "All",
   };
 }
 
@@ -168,6 +182,7 @@ function mapProblemToRow(p: CodingProblem): Record<string, any> {
     starter_code: p.starterCode,
     sample_test_cases: p.sampleTestCases,
     hidden_test_cases: p.hiddenTestCases,
+    target_semester: p.targetSemester || "All",
     updated_at: new Date().toISOString(),
   };
 }

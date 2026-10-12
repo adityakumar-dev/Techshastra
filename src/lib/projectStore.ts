@@ -123,12 +123,21 @@ export const deleteProject = (id: string) => {
 
 export const parseGitHubUrl = (url: string) => {
     try {
-        const cleanUrl = url.replace(/\/$/, "");
-        const parts = cleanUrl.split("/");
-        if (parts.length >= 2) {
+        if (!url) return null;
+        const trimmed = url.trim().replace(/\.git$/i, "").replace(/\/+$/, "");
+        const match = trimmed.match(/github\.com\/([^/]+)\/([^/#?]+)/i);
+        if (match) {
             return {
-                owner: parts[parts.length - 2],
-                repo: parts[parts.length - 1],
+                owner: match[1],
+                repo: match[2],
+            };
+        }
+        // Fallback for bare "owner/repo"
+        const bareMatch = trimmed.match(/^([a-zA-Z0-9_.-]+)\/([a-zA-Z0-9_.-]+)$/);
+        if (bareMatch) {
+            return {
+                owner: bareMatch[1],
+                repo: bareMatch[2],
             };
         }
     } catch (e) {

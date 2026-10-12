@@ -37,7 +37,7 @@ function normaliseProject(raw: any) {
   };
 }
 
-type SandboxMode = "stackblitz" | "codesandbox" | "gitpod" | "github";
+type SandboxMode = "stackblitz" | "codesandbox" | "githubdev" | "gitpod" | "github";
 
 function buildSandboxUrl(
   mode: SandboxMode,
@@ -47,9 +47,11 @@ function buildSandboxUrl(
 ): string {
   switch (mode) {
     case "stackblitz":
-      return `https://stackblitz.com/github/${owner}/${repo}?embed=1&view=preview&theme=dark&hideNavigation=1`;
+      return `https://stackblitz.com/github/${owner}/${repo}?embed=1&theme=dark`;
     case "codesandbox":
-      return `https://codesandbox.io/embed/github/${owner}/${repo}?fontsize=14&theme=dark&view=preview&hidenavigation=1&editorsize=0&hidedevtools=1`;
+      return `https://codesandbox.io/embed/github/${owner}/${repo}?fontsize=14&theme=dark&view=preview`;
+    case "githubdev":
+      return `https://github.dev/${owner}/${repo}`;
     case "gitpod":
       return `https://gitpod.io/#https://github.com/${owner}/${repo}`;
     case "github":
@@ -139,7 +141,7 @@ const ProjectLive = () => {
   };
 
   const tryNextSandbox = () => {
-    const order: SandboxMode[] = ["stackblitz", "codesandbox", "gitpod", "github"];
+    const order: SandboxMode[] = ["stackblitz", "codesandbox", "githubdev", "gitpod", "github"];
     const idx = order.indexOf(sandboxMode);
     const next = order[idx + 1] || "github";
     setSandboxMode(next);
@@ -151,11 +153,12 @@ const ProjectLive = () => {
   const sandboxLabel: Record<SandboxMode, string> = {
     stackblitz: "⚡ StackBlitz",
     codesandbox: "📦 CodeSandbox",
+    githubdev: "💻 GitHub.dev (Web VS Code)",
     gitpod: "🖥️ Gitpod IDE",
     github: "🐙 GitHub",
   };
 
-  const sandboxOrder: SandboxMode[] = ["stackblitz", "codesandbox", "gitpod", "github"];
+  const sandboxOrder: SandboxMode[] = ["stackblitz", "codesandbox", "githubdev", "gitpod", "github"];
   const hasNextSandbox = sandboxOrder.indexOf(sandboxMode) < sandboxOrder.length - 1;
 
   if (loading || !project) {
@@ -200,7 +203,7 @@ const ProjectLive = () => {
           <div className="flex items-center gap-2 flex-wrap">
             {/* Sandbox Switcher Pills */}
             {gitInfo && (
-              <div className="flex items-center gap-1 glass border-0 rounded-full p-1">
+              <div className="flex items-center gap-1 glass border-white/30 dark:border-white/10 rounded-full p-1 shadow-xs">
                 {sandboxOrder.map((mode) => (
                   <button
                     key={mode}
@@ -212,12 +215,12 @@ const ProjectLive = () => {
                     }}
                     className={`px-3 py-1.5 rounded-full text-[10px] uppercase tracking-widest font-medium transition-all ${
                       sandboxMode === mode
-                        ? "bg-primary text-primary-foreground"
-                        : "text-foreground/50 hover:text-foreground"
+                        ? "bg-primary text-primary-foreground shadow-sm"
+                        : "text-foreground/70 hover:text-foreground hover:bg-white/30"
                     }`}
                     title={`Open with ${mode}`}
                   >
-                    {mode === "stackblitz" ? "⚡" : mode === "codesandbox" ? "📦" : mode === "gitpod" ? "🖥" : "🐙"}
+                    {mode === "stackblitz" ? "⚡ StackBlitz" : mode === "codesandbox" ? "📦 CodeSandbox" : mode === "githubdev" ? "💻 Web VSCode" : mode === "gitpod" ? "🖥 Gitpod" : "🐙 GitHub"}
                   </button>
                 ))}
               </div>
@@ -227,13 +230,13 @@ const ProjectLive = () => {
               variant="ghost"
               size="sm"
               onClick={() => setFullscreen((f) => !f)}
-              className="glass border-0 rounded-full px-3"
+              className="glass border-white/30 dark:border-white/10 rounded-full px-3"
               title="Toggle Fullscreen"
             >
               <Maximize2 className="w-4 h-4" />
             </Button>
 
-            <Button variant="outline" className="glass border-0 rounded-full px-5" asChild>
+            <Button variant="outline" className="glass border-white/30 dark:border-white/10 rounded-full px-5 text-foreground font-medium" asChild>
               <a href={project.github} target="_blank" rel="noreferrer">
                 <Github className="w-4 h-4 mr-2" />
                 <span className="text-[10px] uppercase tracking-widest">Source</span>
@@ -241,21 +244,54 @@ const ProjectLive = () => {
             </Button>
 
             {project.demo && (
-              <Button className="bg-primary text-primary-foreground rounded-full px-6" asChild>
+              <Button className="bg-primary text-primary-foreground rounded-full px-6 shadow-md" asChild>
                 <a href={project.demo} target="_blank" rel="noreferrer">
                   <ExternalLink className="w-4 h-4 mr-2" />
-                  <span className="text-[10px] uppercase tracking-widest">Live Demo</span>
+                  <span className="text-[10px] uppercase tracking-widest font-medium">Live Demo</span>
                 </a>
               </Button>
             )}
           </div>
         </div>
 
+        {/* ── Free Public Repo Badge Banner ── */}
+        <div className="mb-6 p-3.5 px-5 rounded-2xl glass border-white/30 dark:border-white/10 flex flex-wrap items-center justify-between gap-3 text-xs bg-white/40 dark:bg-white/5">
+          <div className="flex items-center gap-2.5">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping" />
+            <span className="font-medium text-foreground">
+              ✨ 100% Free Live Sandbox:
+            </span>
+            <span className="text-foreground/70">
+              Any public GitHub repository runs live in StackBlitz, CodeSandbox & Web VS Code with zero payment or login required.
+            </span>
+          </div>
+          {gitInfo && (
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-[11px] rounded-lg text-primary font-medium hover:bg-primary/10"
+                onClick={() => window.open(`https://github.dev/${gitInfo.owner}/${gitInfo.repo}`, "_blank")}
+              >
+                💻 Open Web VS Code
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 text-[11px] rounded-lg text-primary font-medium hover:bg-primary/10"
+                onClick={() => window.open(`https://stackblitz.com/github/${gitInfo.owner}/${gitInfo.repo}`, "_blank")}
+              >
+                ⚡ Open StackBlitz Tab
+              </Button>
+            </div>
+          )}
+        </div>
+
         {/* ── Sandbox Container ── */}
-        <div className={`space-y-8 ${fullscreen ? "fixed inset-0 z-50 bg-background p-4 overflow-auto" : ""}`}>
+        <div className={`space-y-4 ${fullscreen ? "fixed inset-0 z-50 bg-background p-4 overflow-auto" : ""}`}>
           {fullscreen && (
             <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-heading">{project.title}</span>
+              <span className="text-sm font-heading font-medium">{project.title}</span>
               <Button variant="ghost" size="sm" onClick={() => setFullscreen(false)}>
                 ✕ Exit Fullscreen
               </Button>
@@ -264,11 +300,11 @@ const ProjectLive = () => {
 
           {/* Status bar */}
           <div className="flex items-center justify-between px-1">
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <div className="flex items-center gap-2 text-xs text-foreground/70">
               <Terminal className="w-3.5 h-3.5 text-primary" />
               <span>Sandbox: <strong className="text-foreground">{sandboxLabel[sandboxMode]}</strong></span>
               {gitInfo && (
-                <span className="text-foreground/40">
+                <span className="text-foreground/60 font-mono">
                   · {gitInfo.owner}/{gitInfo.repo}
                 </span>
               )}
@@ -277,20 +313,20 @@ const ProjectLive = () => {
             <div className="flex items-center gap-2">
               {/* Sandbox state indicator */}
               {!iframeLoaded && !iframeError && (
-                <span className="text-[10px] text-amber-500 animate-pulse uppercase tracking-wider">Loading…</span>
+                <span className="text-[10px] text-amber-700 dark:text-amber-300 font-semibold bg-amber-500/10 px-2 py-0.5 rounded-full border border-amber-500/20 animate-pulse uppercase tracking-wider">Loading Sandbox…</span>
               )}
               {iframeLoaded && !iframeError && (
-                <span className="text-[10px] text-emerald-500 uppercase tracking-wider">● Live</span>
+                <span className="text-[10px] text-emerald-700 dark:text-emerald-300 font-semibold bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/20 uppercase tracking-wider">● Live Active</span>
               )}
               {iframeError && (
-                <span className="text-[10px] text-rose-500 uppercase tracking-wider">● Failed</span>
+                <span className="text-[10px] text-rose-700 dark:text-rose-300 font-semibold bg-rose-500/10 px-2 py-0.5 rounded-full border border-rose-500/20 uppercase tracking-wider">● Switch Sandbox</span>
               )}
 
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={handleRetry}
-                className="h-7 px-2 text-xs gap-1 rounded-lg"
+                className="h-7 px-2 text-xs gap-1 rounded-lg glass border-white/20"
                 title="Reload sandbox"
               >
                 <RefreshCw className={`w-3 h-3 ${!iframeLoaded ? "animate-spin" : ""}`} />
@@ -299,30 +335,30 @@ const ProjectLive = () => {
           </div>
 
           {/* Main sandbox iframe or error state */}
-          <div className="relative rounded-3xl overflow-hidden border border-primary/10 shadow-2xl bg-black/30 backdrop-blur-sm"
+          <div className="relative rounded-3xl overflow-hidden glass border-white/30 dark:border-white/10 shadow-elevated bg-card/60 backdrop-blur-md"
             style={{ height: fullscreen ? "calc(100vh - 120px)" : "640px" }}
           >
             {/* Loading overlay */}
             {!iframeLoaded && !iframeError && (
-              <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 bg-black/60 backdrop-blur-sm">
+              <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 bg-background/80 backdrop-blur-md">
                 <div className="w-12 h-12 border-4 border-primary border-t-transparent rounded-full animate-spin" />
-                <p className="text-sm text-foreground/60">
+                <p className="text-sm font-medium text-foreground">
                   Starting {sandboxLabel[sandboxMode]} sandbox…
                 </p>
-                <p className="text-xs text-foreground/30 max-w-xs text-center">
-                  This may take 10–30 seconds for first load. The sandbox installs dependencies in the cloud.
+                <p className="text-xs text-foreground/60 max-w-xs text-center">
+                  This installs dependencies in the cloud container. Public GitHub repos are 100% free to execute.
                 </p>
               </div>
             )}
 
             {/* Error / fallback state */}
             {iframeError && (
-              <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-5 bg-black/80 backdrop-blur-md p-8">
-                <AlertCircle className="w-10 h-10 text-rose-400" />
+              <div className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-5 bg-background/90 backdrop-blur-md p-8">
+                <AlertCircle className="w-10 h-10 text-rose-500" />
                 <div className="text-center space-y-1">
-                  <h3 className="text-lg font-heading font-light">Sandbox Failed to Load</h3>
-                  <p className="text-sm text-foreground/50 max-w-sm">
-                    {sandboxLabel[sandboxMode]} couldn't boot this repository. Try a different sandbox provider or open directly on GitHub.
+                  <h3 className="text-lg font-heading font-medium text-foreground">Sandbox Provider Busy or Blocked</h3>
+                  <p className="text-sm text-foreground/70 max-w-md">
+                    {sandboxLabel[sandboxMode]} could not embed this repository directly. Try another free provider or open directly in Web VS Code.
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-3 justify-center">
@@ -346,30 +382,63 @@ const ProjectLive = () => {
               </div>
             )}
 
-            {/* The iframe — Gitpod opens in new tab since it doesn't allow iframes */}
-            {gitInfo && sandboxMode === "gitpod" ? (
+            {/* The iframe — Gitpod & GitHub.dev open in new tab since they disallow iframe embedding */}
+            {gitInfo && sandboxMode === "githubdev" ? (
               <div className="w-full h-full flex flex-col items-center justify-center gap-6 p-8 text-center">
-                <div className="w-16 h-16 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-3xl">
-                  🖥️
+                <div className="w-16 h-16 rounded-2xl bg-primary/10 border-white/20 flex items-center justify-center text-3xl">
+                  💻
                 </div>
                 <div className="space-y-2">
-                  <h3 className="text-xl font-heading font-light">Gitpod Cloud IDE</h3>
-                  <p className="text-sm text-foreground/50 max-w-sm">
-                    Gitpod opens a full VS Code environment in the cloud. It cannot be embedded — click below to launch in a new tab.
+                  <h3 className="text-xl font-heading font-medium text-foreground">GitHub.dev Web VS Code</h3>
+                  <p className="text-sm text-foreground/70 max-w-sm">
+                    Opens a full Visual Studio Code editor right in your browser for <strong>{gitInfo.owner}/{gitInfo.repo}</strong>. Free, no installation needed.
                   </p>
                 </div>
                 <Button
-                  className="rounded-full px-8 gap-2 bg-primary shadow-lg"
+                  className="rounded-full px-8 gap-2 bg-primary shadow-lg font-medium"
+                  onClick={() => {
+                    window.open(buildSandboxUrl("githubdev", gitInfo.owner, gitInfo.repo), "_blank");
+                  }}
+                >
+                  <ExternalLink className="w-4 h-4" />
+                  <span className="text-xs uppercase tracking-wider">Launch Web VS Code</span>
+                </Button>
+                <Button
+                  variant="outline"
+                  className="rounded-full px-6 gap-2 glass border-white/25"
+                  onClick={() => {
+                    setSandboxMode("stackblitz");
+                    setIframeLoaded(false);
+                    setIframeError(false);
+                    setIframeKey((k) => k + 1);
+                  }}
+                >
+                  <span className="text-xs uppercase tracking-wider">⚡ Embed in StackBlitz Instead</span>
+                </Button>
+              </div>
+            ) : gitInfo && sandboxMode === "gitpod" ? (
+              <div className="w-full h-full flex flex-col items-center justify-center gap-6 p-8 text-center">
+                <div className="w-16 h-16 rounded-2xl bg-primary/10 border-white/20 flex items-center justify-center text-3xl">
+                  🖥️
+                </div>
+                <div className="space-y-2">
+                  <h3 className="text-xl font-heading font-medium text-foreground">Gitpod Cloud IDE</h3>
+                  <p className="text-sm text-foreground/70 max-w-sm">
+                    Gitpod boots a full Linux workspace in the cloud. Click below to launch the container in a new tab.
+                  </p>
+                </div>
+                <Button
+                  className="rounded-full px-8 gap-2 bg-primary shadow-lg font-medium"
                   onClick={() => {
                     window.open(buildSandboxUrl("gitpod", gitInfo.owner, gitInfo.repo), "_blank");
                   }}
                 >
                   <ExternalLink className="w-4 h-4" />
-                  <span className="text-xs uppercase tracking-wider">Launch Gitpod IDE</span>
+                  <span className="text-xs uppercase tracking-wider">Launch Gitpod Workspace</span>
                 </Button>
                 <Button
                   variant="outline"
-                  className="rounded-full px-6 gap-2 glass border-0"
+                  className="rounded-full px-6 gap-2 glass border-white/25"
                   onClick={() => {
                     setSandboxMode("stackblitz");
                     setIframeLoaded(false);
