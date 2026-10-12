@@ -670,9 +670,8 @@ const Admin = ({ userRole }: AdminProps) => {
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { id, value } = e.target;
     setFormData(prev => ({ ...prev, [id]: value }));
-    if (id === "github" && value.includes("github.com/") && value.split("/").length >= 5) {
-      fetchRepoMetadata(value);
-    }
+    // Auto-fetch removed: use the "Fetch" button instead to avoid GitHub API rate limits
+    // and partial-URL errors from keystroke-level triggers.
   };
 
   const handleSelectChange = (id: string, value: string) => {
@@ -739,8 +738,16 @@ const Admin = ({ userRole }: AdminProps) => {
       if (newProj) {
         setProjects(prev => [newProj, ...prev]);
         setFormData({ title: "", description: "", github: "", image: "", tags: "", lead: "", designer: "", status: "Completed", language: "javascript" });
-        toast({ title: "Project Added", description: `${newProj.title} has been added successfully.` });
+        toast({ title: "Project Published ✓", description: `"${newProj.title}" is now live on the projects page.` });
         trackAction(`Added project: ${newProj.title}`);
+      } else {
+        // null means Supabase is configured but RLS blocked the write
+        toast({
+          title: "Database Permission Error",
+          description: "Supabase blocked the insert. Please run the RLS fix SQL in your Supabase dashboard (see console for details).",
+          variant: "destructive"
+        });
+        console.error("[TECHSHASTRA] Project insert returned null — this is caused by RLS policy blocking anonymous writes. Run the admin RLS fix migration in Supabase SQL Editor.");
       }
     } catch (err: any) {
       console.error("Submission failed", err);
