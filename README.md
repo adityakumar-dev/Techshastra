@@ -227,6 +227,18 @@ vercel --prod
 - Run `npm run build`
 - Deploy the `dist/` folder to any static hosting
 
+### VPS Auto-Sync with GitHub Actions
+
+A workflow is included at `.github/workflows/deploy-vps.yml` to automatically build and sync the latest `dist/` to your VPS whenever code is pushed to `main` or `master`.
+
+Set these repository secrets before enabling it:
+
+- `VPS_HOST` — Your server IP/domain
+- `VPS_PORT` — SSH port (use `22` if standard)
+- `VPS_USER` — SSH username
+- `VPS_SSH_KEY` — Private SSH key for deployment user
+- `VPS_TARGET_DIR` — Absolute path where `dist/` should be deployed (example: `/var/www/techshastra`)
+
 ---
 
 ## 💡 Admin Panel Features
