@@ -41,9 +41,22 @@ jobs:
           VPS_PORT: ${{ secrets.VPS_PORT }}
         run: |
           mkdir -p ~/.ssh
-          printf "%s\n" "$VPS_SSH_KEY" > ~/.ssh/id_rsa
+          printf '%s\n' "$VPS_SSH_KEY" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
-          ssh-keyscan -p "${VPS_PORT:-22}" -H "$VPS_HOST" >> ~/.ssh/known_hosts
+
+          ssh-keyscan -p "${VPS_PORT:-22}" -H "$VPS_HOST" \
+            >> ~/.ssh/known_hosts
+
+      - name: Prepare deployment directory
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_TARGET_DIR: ${{ secrets.VPS_TARGET_DIR }}
+        run: |
+          ssh -p "${VPS_PORT:-22}" \
+            "${VPS_USER}@${VPS_HOST}" \
+            "mkdir -p '${VPS_TARGET_DIR}'"
 
       - name: Sync dist to VPS
         env:
@@ -55,3 +68,14 @@ jobs:
           rsync -az --delete \
             -e "ssh -p ${VPS_PORT:-22}" \
             dist/ "${VPS_USER}@${VPS_HOST}:${VPS_TARGET_DIR}/"
+
+      - name: Restart and verify systemd service
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+        run: |
+          ssh -p "${VPS_PORT:-22}" \
+            "${VPS_USER}@${VPS_HOST}" \
+            "systemctl restart remix.service &&
+             systemctl is-active remix.service"
