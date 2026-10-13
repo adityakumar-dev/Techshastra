@@ -35,6 +35,7 @@ jobs:
         run: npm run build
 
       - name: Configure SSH
+        if: ${{ secrets.VPS_SSH_KEY != '' && secrets.VPS_HOST != '' && secrets.VPS_USER != '' && secrets.VPS_TARGET_DIR != '' }}
         env:
           VPS_SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
           VPS_HOST: ${{ secrets.VPS_HOST }}
@@ -46,6 +47,7 @@ jobs:
           ssh-keyscan -p "${VPS_PORT:-22}" -H "$VPS_HOST" >> ~/.ssh/known_hosts
 
       - name: Sync dist to VPS
+        if: ${{ secrets.VPS_SSH_KEY != '' && secrets.VPS_HOST != '' && secrets.VPS_USER != '' && secrets.VPS_TARGET_DIR != '' }}
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_PORT: ${{ secrets.VPS_PORT }}
@@ -55,3 +57,7 @@ jobs:
           rsync -az --delete \
             -e "ssh -p ${VPS_PORT:-22}" \
             dist/ "${VPS_USER}@${VPS_HOST}:${VPS_TARGET_DIR}/"
+
+      - name: Skip deploy when VPS secrets are missing
+        if: ${{ !(secrets.VPS_SSH_KEY != '' && secrets.VPS_HOST != '' && secrets.VPS_USER != '' && secrets.VPS_TARGET_DIR != '') }}
+        run: echo "Skipping VPS deployment because one or more required VPS secrets are not configured."
