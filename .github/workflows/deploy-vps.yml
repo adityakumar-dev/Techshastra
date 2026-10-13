@@ -55,3 +55,13 @@ jobs:
           rsync -az --delete \
             -e "ssh -p ${VPS_PORT:-22}" \
             dist/ "${VPS_USER}@${VPS_HOST}:${VPS_TARGET_DIR}/"
+
+      - name: Run optional post-deploy command
+        if: ${{ secrets.VPS_POST_DEPLOY_CMD != '' }}
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_PORT: ${{ secrets.VPS_PORT }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_POST_DEPLOY_CMD: ${{ secrets.VPS_POST_DEPLOY_CMD }}
+        run: |
+          ssh -p "${VPS_PORT:-22}" "${VPS_USER}@${VPS_HOST}" "$VPS_POST_DEPLOY_CMD"

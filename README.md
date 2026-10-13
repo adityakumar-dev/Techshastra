@@ -231,13 +231,97 @@ vercel --prod
 
 A workflow is included at `.github/workflows/deploy-vps.yml` to automatically build and sync the latest `dist/` to your VPS whenever code is pushed to `main` or `master`.
 
-Set these repository secrets before enabling it:
+#### 1) VPS one-time setup
+
+```bash
+# create deploy user
+adduser deploy
+
+# app directory (must match VPS_TARGET_DIR secret)
+mkdir -p /var/www/techshastra
+chown -R deploy:deploy /var/www/techshastra
+
+# runtime dependencies
+apt update && apt install -y rsync openssh-server nginx
+```
+
+Nginx static-site example (Cloudflare tunnel-friendly on port `4173`):
+
+```nginx
+server {
+    listen 4173;
+    server_name _;
+    root /var/www/techshastra;
+    index index.html;
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}
+```
+
+Enable and reload:
+
+```bash
+ln -s /etc/nginx/sites-available/techshastra /etc/nginx/sites-enabled/techshastra
+nginx -t && systemctl reload nginx
+```
+
+#### 2) Generate deploy key pair (on your local machine)
+
+```bash
+ssh-keygen -t ed25519 -C "github-actions-techshastra" -f techshastra_deploy -N ""
+```
+
+This creates:
+- `techshastra_deploy` (private key)
+- `techshastra_deploy.pub` (public key)
+
+#### 3) Add public key on VPS (for deploy user)
+
+```bash
+mkdir -p /home/deploy/.ssh
+chmod 700 /home/deploy/.ssh
+cat techshastra_deploy.pub >> /home/deploy/.ssh/authorized_keys
+chmod 600 /home/deploy/.ssh/authorized_keys
+chown -R deploy:deploy /home/deploy/.ssh
+```
+
+#### 4) Configure GitHub Actions secrets
+
+Required:
 
 - `VPS_HOST` — Your server IP/domain
 - `VPS_PORT` — SSH port (use `22` if standard)
-- `VPS_USER` — SSH username
-- `VPS_SSH_KEY` — Private SSH key for deployment user
-- `VPS_TARGET_DIR` — Absolute path where `dist/` should be deployed (example: `/var/www/techshastra`)
+- `VPS_USER` — SSH username (recommended: `deploy`)
+- `VPS_SSH_KEY` — Full private key content from `techshastra_deploy`
+- `VPS_TARGET_DIR` — Absolute path where `dist/` is deployed (example: `/var/www/techshastra`)
+
+Optional:
+
+- `VPS_POST_DEPLOY_CMD` — Command executed over SSH after rsync (example: `sudo systemctl reload nginx` or `sudo systemctl restart remix`)
+
+#### 5) Optional sudoers entry (if using sudo in post-deploy command)
+
+`/etc/sudoers.d/deploy-nginx`:
+
+```text
+deploy ALL=(ALL) NOPASSWD:/bin/systemctl reload nginx,/bin/systemctl restart remix
+```
+
+#### 6) Cloudflare Tunnel target
+
+Point the tunnel to:
+
+```text
+http://localhost:4173
+```
+
+#### 7) Consistency checks
+
+- `VPS_TARGET_DIR` must be the same directory served by Nginx `root`.
+- Avoid mixing `/root/Techshastra/dist` with `/var/www/techshastra`; use one deployment target.
+- Workflow build uses `npm` (`npm ci`, `npm run build`) by design.
 
 ---
 
