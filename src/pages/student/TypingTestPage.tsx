@@ -648,27 +648,49 @@ export const TypingTestPage: React.FC = () => {
         <div className="p-5 sm:p-7 space-y-5">
 
           {/* Controls */}
-          <div className="flex items-center justify-between pb-4" style={{ borderBottom: "1px solid hsl(var(--glass-border))" }}>
-            {/* Duration */}
-            <div className="flex items-center gap-1 bg-foreground/5 p-1 rounded-xl text-xs">
-              {[15, 30, 60].map((dur) => (
-                <button
-                  key={dur}
-                  onClick={() => handleDurationChange(dur)}
-                  disabled={isActive}
-                  className={`px-3 py-1 rounded-lg transition-colors font-mono ${
-                    selectedDuration === dur
-                      ? "bg-primary text-primary-foreground font-semibold"
-                      : "text-foreground/50 hover:text-foreground"
-                  } disabled:opacity-40 disabled:cursor-not-allowed`}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pb-4" style={{ borderBottom: "1px solid hsl(var(--glass-border))" }}>
+            <div className="flex items-center justify-between sm:justify-start gap-2">
+              {/* Duration */}
+              <div className="flex items-center gap-1 bg-foreground/5 p-1 rounded-xl text-xs">
+                {[15, 30, 60].map((dur) => (
+                  <button
+                    key={dur}
+                    onClick={() => handleDurationChange(dur)}
+                    disabled={isActive}
+                    className={`px-3 py-1 rounded-lg transition-colors font-mono ${
+                      selectedDuration === dur
+                        ? "bg-primary text-primary-foreground font-semibold"
+                        : "text-foreground/50 hover:text-foreground"
+                    } disabled:opacity-40 disabled:cursor-not-allowed`}
+                  >
+                    {dur}s
+                  </button>
+                ))}
+              </div>
+
+              {/* Sound + Reset (mobile) */}
+              <div className="flex items-center gap-1 sm:hidden">
+                <Button
+                  variant="ghost" size="icon"
+                  onClick={() => handleThemeChange(isMuted ? "thock" : "off")}
+                  className="h-8 w-8 text-foreground/50 hover:text-foreground rounded-xl"
+                  title={isMuted ? "Unmute" : "Mute"}
                 >
-                  {dur}s
-                </button>
-              ))}
+                  {isMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}
+                </Button>
+                <Button
+                  variant="ghost" size="icon"
+                  onClick={() => resetTest()}
+                  className="h-8 w-8 text-foreground/50 hover:text-foreground rounded-xl"
+                  title="Restart"
+                >
+                  <RotateCcw size={14} />
+                </Button>
+              </div>
             </div>
 
             {/* Live stats */}
-            <div className="flex items-center gap-4 font-mono text-xs">
+            <div className="flex items-center justify-between sm:justify-end gap-3 sm:gap-4 font-mono text-xs">
               <div className="flex items-center gap-1.5 text-foreground/50">
                 <Clock size={13} />
                 <span className={`font-semibold text-sm ${timeLeft <= 5 && isActive ? "text-rose-400 animate-pulse" : "text-foreground"}`}>
@@ -684,26 +706,26 @@ export const TypingTestPage: React.FC = () => {
                 <Target size={13} className="text-emerald-400" />
                 <span className="font-semibold text-sm text-foreground">{liveAccuracy}%</span>
               </div>
-            </div>
 
-            {/* Sound + Reset */}
-            <div className="flex items-center gap-1">
-              <Button
-                variant="ghost" size="icon"
-                onClick={() => handleThemeChange(isMuted ? "thock" : "off")}
-                className="h-8 w-8 text-foreground/50 hover:text-foreground rounded-xl"
-                title={isMuted ? "Unmute" : "Mute"}
-              >
-                {isMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}
-              </Button>
-              <Button
-                variant="ghost" size="icon"
-                onClick={() => resetTest()}
-                className="h-8 w-8 text-foreground/50 hover:text-foreground rounded-xl"
-                title="Restart"
-              >
-                <RotateCcw size={14} />
-              </Button>
+              {/* Sound + Reset (desktop) */}
+              <div className="hidden sm:flex items-center gap-1 ml-2">
+                <Button
+                  variant="ghost" size="icon"
+                  onClick={() => handleThemeChange(isMuted ? "thock" : "off")}
+                  className="h-8 w-8 text-foreground/50 hover:text-foreground rounded-xl"
+                  title={isMuted ? "Unmute" : "Mute"}
+                >
+                  {isMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}
+                </Button>
+                <Button
+                  variant="ghost" size="icon"
+                  onClick={() => resetTest()}
+                  className="h-8 w-8 text-foreground/50 hover:text-foreground rounded-xl"
+                  title="Restart"
+                >
+                  <RotateCcw size={14} />
+                </Button>
+              </div>
             </div>
           </div>
 

@@ -64,6 +64,14 @@ export const ProblemSolve: React.FC = () => {
   const [activeLeftTab, setActiveLeftTab] = useState<string>("description");
   const [activeBottomTab, setActiveBottomTab] = useState<string>("testcases");
   const [selectedTestCaseIdx, setSelectedTestCaseIdx] = useState<number>(0);
+  const [isMobile, setIsMobile] = useState<boolean>(() => typeof window !== "undefined" && window.innerWidth < 768);
+  const [mobileTab, setMobileTab] = useState<"problem" | "editor" | "output">("problem");
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
 
   // Execution states
   const [isRunning, setIsRunning] = useState<boolean>(false);
@@ -91,16 +99,14 @@ export const ProblemSolve: React.FC = () => {
       const userSubs = getUserSubmissions(currentId).filter((s) => s.problemId === p.id);
       setSubmissions(userSubs);
     } else {
-      import("@/lib/services/problemService").then(({ getProblemById: fetchById, enrichProblem }) => {
-        fetchById(id).then((fresh) => {
-          if (fresh) {
-            const enriched = enrichProblem(fresh as any);
-            setProblem(enriched);
-            setCode(enriched.starterCode[language] || enriched.starterCode.python || "");
-            const userSubs = getUserSubmissions(currentId).filter((s) => s.problemId === enriched.id);
-            setSubmissions(userSubs);
-          }
-        });
+      import("@/lib/codingStore").then(({ getProblemById: fetchById, enrichProblem }) => {
+        const fresh = fetchById(id);
+        if (fresh) {
+          setProblem(fresh);
+          setCode(fresh.starterCode[language] || fresh.starterCode.python || "");
+          const userSubs = getUserSubmissions(currentId).filter((s) => s.problemId === fresh.id);
+          setSubmissions(userSubs);
+        }
       });
     }
   }, [id, session]);
@@ -124,6 +130,7 @@ export const ProblemSolve: React.FC = () => {
     if (!problem) return;
     setIsRunning(true);
     setActiveBottomTab("result");
+    if (isMobile) setMobileTab("output");
 
     try {
       const publicCases = problem.testCases.filter((tc) => !tc.isHidden);
@@ -155,6 +162,7 @@ export const ProblemSolve: React.FC = () => {
     if (!problem) return;
     setIsSubmitting(true);
     setActiveBottomTab("result");
+    if (isMobile) setMobileTab("output");
 
     try {
       // Evaluate all test cases (hidden cases are protected inside evaluateTestCases)
@@ -723,7 +731,7 @@ export const ProblemSolve: React.FC = () => {
                                       : `Test Case #${idx + 1}`}
                                   </span>
                                   <span className="text-[10px] text-muted-foreground">
-                                    {tr.executionTimeMs}ms
+                                    {(tr as any).executionTimeMs ?? tr.runtimeMs}ms
                                   </span>
                                 </div>
 

@@ -1,5 +1,6 @@
 import { supabase, isSupabaseConfigured } from './supabase/client';
 import { addLogEntry } from './activityLogStore';
+import type { AdminRole } from './adminStore';
 import {
   createAdminLoginRequestDB,
   getPendingAdminLoginRequestsDB,
@@ -14,7 +15,7 @@ export interface AdminLoginRequest {
   adminName: string;
   mobile: string;
   dob: string;
-  role: 'admin';
+  role: AdminRole;
   device: string;
   status: LoginRequestStatus;
   requestedAt: string;
@@ -227,7 +228,7 @@ export const createAdminLoginRequest = (params: {
   adminName: string;
   mobile: string;
   dob: string;
-  role: 'admin';
+  role: AdminRole;
   device?: string;
   isNewRegistration?: boolean;
 }): AdminLoginRequest => {
@@ -400,13 +401,15 @@ export const subscribeToAdminLoginRequests = (
         const map = new Map<string, AdminLoginRequest>();
         for (const r of current) map.set(r.id, r);
         for (const db of dbPending) {
+          const rawRole = (db.role as string);
+          const role: AdminRole = rawRole === 'super_admin' ? 'super_admin' : rawRole === 'faculty' ? 'faculty' : 'member';
           const mapped: AdminLoginRequest = {
             id: db.id,
             adminId: db.admin_id,
             adminName: db.admin_name,
             mobile: db.mobile,
             dob: db.dob,
-            role: 'admin',
+            role,
             device: db.device || 'Unknown',
             status: db.status as any,
             requestedAt: db.requested_at,
@@ -489,13 +492,15 @@ export const subscribeToSpecificRequest = (
             .maybeSingle();
 
           if (data) {
+            const rawRole = (data.role as string);
+            const role: AdminRole = rawRole === 'super_admin' ? 'super_admin' : rawRole === 'faculty' ? 'faculty' : 'member';
             const mapped: AdminLoginRequest = {
               id: data.id,
               adminId: data.admin_id,
               adminName: data.admin_name,
               mobile: data.mobile,
               dob: data.dob,
-              role: 'admin',
+              role,
               device: data.device || 'Unknown',
               status: data.status as any,
               requestedAt: data.requested_at,

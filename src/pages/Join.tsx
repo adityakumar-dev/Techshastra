@@ -72,17 +72,38 @@ const INTERESTS = [
 
 const signupSchema = z
   .object({
-    name: z.string().min(2).max(100),
-    email: z.string().email().max(255),
+    name: z
+      .string()
+      .trim()
+      .min(2, "Name must be at least 2 characters")
+      .max(70, "Name cannot exceed 70 characters")
+      .regex(/^[a-zA-Z\s.'-]+$/, "Name should only contain letters, spaces, hyphens, and periods")
+      .refine((v) => !/[<>{}[\]\\;/=^`~]/.test(v), "Special characters are not allowed in name"),
+    email: z
+      .string()
+      .trim()
+      .toLowerCase()
+      .email("Please enter a valid email address")
+      .max(255),
     password: z
       .string()
       .min(8, "Password must be at least 8 characters")
-      .max(72),
+      .max(72)
+      .refine((v) => v.trim().length >= 8, "Password cannot be whitespace only"),
     confirmPassword: z.string(),
-    contact: z.string().min(10).max(15),
+    contact: z
+      .string()
+      .trim()
+      .regex(/^[+]?[0-9\s-]{10,15}$/, "Please enter a valid 10-15 digit phone number"),
     course: z.string().optional(),
     year: z.string().optional(),
-    rollNumber: z.string().optional(),
+    rollNumber: z
+      .string()
+      .trim()
+      .max(30)
+      .regex(/^[a-zA-Z0-9\-_/]*$/, "Roll number should only contain alphanumeric characters, hyphens, or slashes")
+      .optional()
+      .or(z.literal("")),
     githubUsername: z
       .string()
       .min(1, "GitHub username is required")
@@ -123,11 +144,17 @@ const signinSchema = z.object({
 });
 
 const enquirySchema = z.object({
-  name: z.string().min(2).max(100),
-  organization: z.string().optional(),
-  email: z.string().email().max(255),
-  contact: z.string().min(10).max(15),
-  reason: z.string().min(20).max(1000),
+  name: z
+    .string()
+    .trim()
+    .min(2, "Name must be at least 2 characters")
+    .max(100, "Name cannot exceed 100 characters")
+    .regex(/^[a-zA-Z\s.'-]+$/, "Name should only contain letters, spaces, hyphens, and periods")
+    .refine((v) => !/[<>{}[\]\\;/=^`~]/.test(v), "Special characters are not allowed in name"),
+  organization: z.string().trim().max(100).optional(),
+  email: z.string().trim().toLowerCase().email("Please enter a valid email address").max(255),
+  contact: z.string().trim().regex(/^[+]?[0-9\s-]{10,15}$/, "Please enter a valid 10-15 digit phone number"),
+  reason: z.string().trim().min(20, "Please provide at least 20 characters").max(1000),
   interests: z.array(z.string()).min(1, "Select at least one interest"),
   agreement: z
     .boolean()
@@ -228,6 +255,14 @@ const SignupForm = ({ onSuccess }: { onSuccess: (username: string) => void }) =>
   });
 
   const onSubmit = async (data: SignupData) => {
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      toast({
+        title: "Offline",
+        description: "You are currently offline. Please check your internet connection before registering.",
+        variant: "destructive",
+      });
+      return;
+    }
     setLoading(true);
     try {
       // 1. Persist directly to Supabase Backend
@@ -462,6 +497,14 @@ const SigninForm = ({ onSuccess }: { onSuccess: (username: string) => void }) =>
   });
 
   const onSubmit = async (data: SigninData) => {
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      toast({
+        title: "Offline",
+        description: "You are currently offline. Please check your internet connection before signing in.",
+        variant: "destructive",
+      });
+      return;
+    }
     setLoading(true);
     const ok = await login(data.email, data.password);
     if (ok) {

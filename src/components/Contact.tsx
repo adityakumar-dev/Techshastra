@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Mail, Phone, MapPin, Linkedin, Instagram, Send, CheckCircle2 } from "lucide-react";
 import { submitContactMessage } from "@/lib/services/messageService";
 import { useToast } from "@/hooks/use-toast";
+import { sanitizeName, sanitizeEmail, sanitizeGeneralText } from "@/lib/utils/sanitize";
 
 const contactInfo = [
   { icon: Mail, label: "Email", value: "vmsb.utu.ddn.2023@gmail.com", link: "mailto:vmsb.utu.ddn.2023@gmail.com" },
@@ -34,14 +35,44 @@ const Contact = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    const nameCheck = sanitizeName(formData.name);
+    if (!nameCheck.valid) {
+      toast({ title: "Invalid Name", description: nameCheck.error, variant: "destructive" });
+      return;
+    }
+
+    const emailCheck = sanitizeEmail(formData.email);
+    if (!emailCheck.valid) {
+      toast({ title: "Invalid Email", description: emailCheck.error, variant: "destructive" });
+      return;
+    }
+
+    const cleanSubject = sanitizeGeneralText(formData.subject, 150);
+    const cleanMessage = sanitizeGeneralText(formData.message, 3000);
+
+    if (cleanMessage.length < 10) {
+      toast({ title: "Message too short", description: "Please enter at least 10 characters in your message.", variant: "destructive" });
+      return;
+    }
+
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      toast({
+        title: "Offline",
+        description: "You are currently offline. Please check your internet connection before sending your message.",
+        variant: "destructive"
+      });
+      return;
+    }
+
     setLoading(true);
 
     try {
       await submitContactMessage({
-        name: formData.name,
-        email: formData.email,
-        subject: formData.subject,
-        message: formData.message,
+        name: nameCheck.cleaned,
+        email: emailCheck.cleaned,
+        subject: cleanSubject,
+        message: cleanMessage,
       });
 
       setSubmitted(true);
@@ -52,7 +83,7 @@ const Contact = () => {
     } catch (err: any) {
       toast({
         title: "Error",
-        description: "Failed to send message. Please try again later.",
+        description: err?.message || "Failed to send message. Please try again later.",
         variant: "destructive"
       });
     } finally {

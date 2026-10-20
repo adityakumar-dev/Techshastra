@@ -11,7 +11,7 @@ interface Achievement {
   id: string;
   title: string;
   description: string;
-  image_url: string | null;
+  image_url?: string | null;
   date: string;
 }
 
@@ -40,7 +40,13 @@ const Achievements = () => {
     } catch (_e) {}
     try {
       const data = await getLocalAchievements();
-      setAchievements(data);
+      setAchievements((data as any[]).map((d: any) => ({
+        id: d.id,
+        title: d.title,
+        description: d.description,
+        image_url: d.image_url ?? null,
+        date: d.date || d.achievement_date || new Date().toISOString(),
+      })));
     } catch (error) {
       console.error("Error fetching achievements:", error);
     } finally {

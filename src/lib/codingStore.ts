@@ -24,7 +24,7 @@ export interface ProblemSubmission {
   studentName: string;
   language: SupportedLanguage;
   code: string;
-  status: "Accepted" | "Wrong Answer" | "Compilation Error" | "Runtime Error";
+  status: "Accepted" | "Wrong Answer" | "Compilation Error" | "Runtime Error" | "Time Limit Exceeded";
   passedTestCases: number;
   totalTestCases: number;
   runtimeMs: number;

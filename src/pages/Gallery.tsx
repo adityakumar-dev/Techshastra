@@ -9,6 +9,7 @@ import { useEffect, useState } from "react";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import { Card } from "@/components/ui/card";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { getAllGalleryImages, GalleryImage } from "@/lib/galleryStore";
 import { getGalleryPhotos } from "@/lib/services/galleryService";
 

@@ -48,8 +48,10 @@ const ProtectedRoute = ({ children, requireAdmin = false }: ProtectedRouteProps)
     if (raw) {
       try {
         const session = JSON.parse(raw);
-        if (session.role === "super_admin" || session.role === "admin") {
-          setUserRole(session.role as AdminRole);
+        const validRoles = ["super_admin", "admin", "member", "faculty"];
+        if (session && validRoles.includes(session.role)) {
+          const normalized: AdminRole = session.role === "admin" ? "member" : (session.role as AdminRole);
+          setUserRole(normalized);
         }
       } catch (_e) { /* invalid */ }
     }

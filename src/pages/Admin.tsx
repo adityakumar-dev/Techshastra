@@ -13,7 +13,7 @@
  * It uses local state for form management and persists data via custom stores in src/lib/.
  */
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import Navbar from "@/components/Navbar";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -26,7 +26,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { useToast } from "@/components/ui/use-toast";
 import { parseGitHubUrl } from "@/lib/projectStore";
 import { generateSlug } from "@/lib/blogStore";
-import { getAdminUsers, blockAdmin, unblockAdmin, getAllPageVisibility, togglePageVisibility, createAdminCredential, getStoredCredentials, deleteAdminCredential, setSuperAdminCredentials, isSuperAdminDefault, type AdminCredential, type PageVisibility, type AdminRole, subscribeToAdminLoginRequests, approveAdminLoginRequest, rejectAdminLoginRequest, type AdminLoginRequest } from "@/lib/adminStore";
+import { getAdminUsers, blockAdmin, unblockAdmin, getAllPageVisibility, togglePageVisibility, createAdminCredential, getStoredCredentials, deleteAdminCredential, setSuperAdminCredentials, isSuperAdminDefault, updateAdminRole, type AdminCredential, type PageVisibility, type AdminRole, subscribeToAdminLoginRequests, approveAdminLoginRequest, rejectAdminLoginRequest, type AdminLoginRequest } from "@/lib/adminStore";
 import { addLogEntry, clearLog, getLogEntries, revertEntry, saveCredentialsRaw, type LogEntry } from "@/lib/activityLogStore";
 import { useAdminPresence } from "@/hooks/use-admin-presence";
 import { Badge } from "@/components/ui/badge";
@@ -277,10 +277,21 @@ const StudentsTab = () => {
 const Admin = ({ userRole }: AdminProps) => {
   const { toast } = useToast();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
   const isSuperAdmin = userRole === "super_admin";
-  const [activeTab, setActiveTab] = useState("overview");
+  const isFaculty = !isSuperAdmin && userRole === "faculty";
+  const isMember = !isSuperAdmin && !isFaculty;
+
+  // Default tab depends on role: faculty lands on problems, others on overview
+  const defaultTab = isFaculty ? "problems" : "overview";
+  const [activeTab, setActiveTab] = useState(() => searchParams.get("tab") || defaultTab);
+
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [currentUserName, setCurrentUserName] = useState("Admin");
+
+  // Live students for Overview card
+  const [liveStudents, setLiveStudents] = useState<any[]>([]);
 
   // Get current user info on mount - using sessionStorage from custom auth
   useEffect(() => {
@@ -294,6 +305,20 @@ const Admin = ({ userRole }: AdminProps) => {
         setCurrentUserName("Admin");
       }
     }
+  }, []);
+
+  // Sync tab from URL param changes (e.g. navigating to /admin?tab=super-admin)
+  useEffect(() => {
+    const tabParam = searchParams.get("tab");
+    if (tabParam) setActiveTab(tabParam);
+  }, [searchParams]);
+
+  // Load live students for overview stats
+  useEffect(() => {
+    studentService.getAllStudents(true).then(data => {
+      if (data && data.length > 0) setLiveStudents(data);
+      else setLiveStudents(getAllStudents());
+    }).catch(() => setLiveStudents(getAllStudents()));
   }, []);
 
   // Presence tracking (only active when Super Admin or for all admins to broadcast)
@@ -322,12 +347,13 @@ const Admin = ({ userRole }: AdminProps) => {
     if (updated) {
       // If this was a NEW registration request, create the admin credential now
       if (req?.isNewRegistration) {
+        const reqRole: AdminRole = req.role === "faculty" ? "faculty" : "member";
         try {
           createAdminCredential(
             updated.adminName,
             updated.mobile,
             updated.dob,
-            "admin"
+            reqRole
           );
         } catch (_e) {
           console.warn("Failed to auto-create admin credential on approval:", _e);
@@ -503,6 +529,7 @@ const Admin = ({ userRole }: AdminProps) => {
 
   // ── Super Admin state ─────────────────────────────────────────────────────────
   const [adminUsers, setAdminUsers] = useState<AdminCredential[]>([]);
+  const [newCredRole, setNewCredRole] = useState<"member" | "faculty">("member");
   const [pages, setPages] = useState<PageVisibility[]>([]);
   const [newAdminEmail, setNewAdminEmail] = useState("");
   const [blockReason, setBlockReason] = useState("");
@@ -912,9 +939,9 @@ const Admin = ({ userRole }: AdminProps) => {
 
   const handleTogglePublish = async (post: BlogPost) => {
     try {
-      await blogService.updateBlogPost(post.id, { is_published: !post.is_published });
-      setBlogPosts(prev => prev.map(p => p.id === post.id ? { ...p, is_published: !post.is_published } : p));
-      toast({ title: post.is_published ? "Post Unpublished" : "Post Published", description: `"${post.title}" visibility updated.` });
+      await blogService.updateBlogPost(post.id, { published: !post.published });
+      setBlogPosts(prev => prev.map(p => p.id === post.id ? { ...p, published: !post.published } : p));
+      toast({ title: post.published ? "Post Unpublished" : "Post Published", description: `"${post.title}" visibility updated.` });
     } catch (err: any) {
       toast({ title: "Update Failed", description: "Could not update publish status.", variant: "destructive" });
     }
@@ -1256,7 +1283,7 @@ const Admin = ({ userRole }: AdminProps) => {
     }
   };
 
-  const publishedBlogCount = blogPosts.filter(p => p.is_published).length;
+  const publishedBlogCount = blogPosts.filter(p => p.published).length;
 
   const handleSignOut = () => {
     sessionStorage.removeItem("ts_admin_session");
@@ -1272,11 +1299,13 @@ const Admin = ({ userRole }: AdminProps) => {
           <div>
             <div className="flex items-center gap-2.5 sm:gap-3 mb-1.5">
               <h1 className="text-2xl sm:text-4xl font-bold">Admin Dashboard</h1>
-              <Badge variant={isSuperAdmin ? "default" : "secondary"} className="text-[10px] sm:text-xs">
-                {isSuperAdmin ? "⭐ Super Admin" : "Admin"}
+              <Badge variant={isSuperAdmin ? "default" : isFaculty ? "outline" : "secondary"} className="text-[10px] sm:text-xs">
+                {isSuperAdmin ? "⭐ Super Admin" : isFaculty ? "🎓 Faculty" : "👥 Member"}
               </Badge>
             </div>
-            <p className="text-xs sm:text-sm text-muted-foreground">Manage your tech club content and settings</p>
+            <p className="text-xs sm:text-sm text-muted-foreground">
+              {isFaculty ? "Manage student problems & coding tasks" : "Manage your tech club content and settings"}
+            </p>
           </div>
           <Button variant="outline" size="sm" onClick={handleSignOut} className="gap-2 self-start sm:self-auto h-9">
             <LogOut className="w-4 h-4" />
@@ -1347,21 +1376,25 @@ const Admin = ({ userRole }: AdminProps) => {
           </div>
         )}
 
-        <Tabs defaultValue="overview" className="space-y-6" onValueChange={setActiveTab}>
+        <Tabs value={activeTab} className="space-y-6" onValueChange={setActiveTab}>
           <TabsList className="w-full flex overflow-x-auto no-scrollbar scroll-smooth md:flex-wrap h-auto glass bg-white/40 dark:bg-white/5 p-1.5 gap-1.5 rounded-2xl border border-white/30 dark:border-white/10">
-            <TabsTrigger value="overview" className="shrink-0 text-xs py-2 px-3 rounded-xl"><LayoutDashboard className="w-3.5 h-3.5 mr-1.5" />Overview</TabsTrigger>
-            <TabsTrigger value="projects" className="shrink-0 text-xs py-2 px-3 rounded-xl"><FileText className="w-3.5 h-3.5 mr-1.5 hidden sm:inline" />Projects</TabsTrigger>
-            <TabsTrigger value="events" className="shrink-0 text-xs py-2 px-3 rounded-xl"><Calendar className="w-3.5 h-3.5 mr-1.5 hidden sm:inline" />Events</TabsTrigger>
-            <TabsTrigger value="blog" className="shrink-0 text-xs py-2 px-3 rounded-xl"><Newspaper className="w-3.5 h-3.5 mr-1.5 hidden sm:inline" />Blog</TabsTrigger>
-            <TabsTrigger value="gallery" className="shrink-0 text-xs py-2 px-3 rounded-xl"><Image className="w-3.5 h-3.5 mr-1.5 hidden sm:inline" />Gallery</TabsTrigger>
-            <TabsTrigger value="socials" className="shrink-0 text-xs py-2 px-3 rounded-xl"><Hash className="w-3.5 h-3.5 mr-1.5 hidden sm:inline" />Socials</TabsTrigger>
-            <TabsTrigger value="publications" className="shrink-0 text-xs py-2 px-3 rounded-xl"><Book className="w-3.5 h-3.5 mr-1.5 hidden sm:inline" />Research</TabsTrigger>
-            <TabsTrigger value="awards" className="shrink-0 text-xs py-2 px-3 rounded-xl"><Trophy className="w-3.5 h-3.5 mr-1.5 hidden sm:inline" />Awards</TabsTrigger>
-            <TabsTrigger value="faq" className="shrink-0 text-xs py-2 px-3 rounded-xl"><HelpCircle className="w-3.5 h-3.5 mr-1.5 hidden sm:inline" />FAQ</TabsTrigger>
-            <TabsTrigger value="messages" className="shrink-0 text-xs py-2 px-3 rounded-xl"><MessageSquare className="w-3.5 h-3.5 mr-1.5 hidden sm:inline" />Messages</TabsTrigger>
-            <TabsTrigger value="certificates" className="shrink-0 text-xs py-2 px-3 rounded-xl"><Award className="w-3.5 h-3.5 mr-1.5 hidden sm:inline" />Certs</TabsTrigger>
-            <TabsTrigger value="students" className="shrink-0 text-xs py-2 px-3 rounded-xl"><Users className="w-3.5 h-3.5 mr-1.5 hidden sm:inline" />Students</TabsTrigger>
-            <TabsTrigger value="problems" className="shrink-0 text-xs py-2 px-3 rounded-xl"><Code2 className="w-3.5 h-3.5 mr-1.5 hidden sm:inline" />Problems & Tasks</TabsTrigger>
+            {/* Members & SuperAdmin see overview/club tabs */}
+            {!isFaculty && (<TabsTrigger value="overview" className="shrink-0 text-xs py-2 px-3 rounded-xl"><LayoutDashboard className="w-3.5 h-3.5 mr-1.5" />Overview</TabsTrigger>)}
+            {!isFaculty && (<TabsTrigger value="projects" className="shrink-0 text-xs py-2 px-3 rounded-xl"><FileText className="w-3.5 h-3.5 mr-1.5 hidden sm:inline" />Projects</TabsTrigger>)}
+            {!isFaculty && (<TabsTrigger value="events" className="shrink-0 text-xs py-2 px-3 rounded-xl"><Calendar className="w-3.5 h-3.5 mr-1.5 hidden sm:inline" />Events</TabsTrigger>)}
+            {!isFaculty && (<TabsTrigger value="blog" className="shrink-0 text-xs py-2 px-3 rounded-xl"><Newspaper className="w-3.5 h-3.5 mr-1.5 hidden sm:inline" />Blog</TabsTrigger>)}
+            {!isFaculty && (<TabsTrigger value="gallery" className="shrink-0 text-xs py-2 px-3 rounded-xl"><Image className="w-3.5 h-3.5 mr-1.5 hidden sm:inline" />Gallery</TabsTrigger>)}
+            {!isFaculty && (<TabsTrigger value="socials" className="shrink-0 text-xs py-2 px-3 rounded-xl"><Hash className="w-3.5 h-3.5 mr-1.5 hidden sm:inline" />Socials</TabsTrigger>)}
+            {!isFaculty && (<TabsTrigger value="publications" className="shrink-0 text-xs py-2 px-3 rounded-xl"><Book className="w-3.5 h-3.5 mr-1.5 hidden sm:inline" />Research</TabsTrigger>)}
+            {!isFaculty && (<TabsTrigger value="awards" className="shrink-0 text-xs py-2 px-3 rounded-xl"><Trophy className="w-3.5 h-3.5 mr-1.5 hidden sm:inline" />Awards</TabsTrigger>)}
+            {!isFaculty && (<TabsTrigger value="faq" className="shrink-0 text-xs py-2 px-3 rounded-xl"><HelpCircle className="w-3.5 h-3.5 mr-1.5 hidden sm:inline" />FAQ</TabsTrigger>)}
+            {!isFaculty && (<TabsTrigger value="messages" className="shrink-0 text-xs py-2 px-3 rounded-xl"><MessageSquare className="w-3.5 h-3.5 mr-1.5 hidden sm:inline" />Messages</TabsTrigger>)}
+            {!isFaculty && (<TabsTrigger value="certificates" className="shrink-0 text-xs py-2 px-3 rounded-xl"><Award className="w-3.5 h-3.5 mr-1.5 hidden sm:inline" />Certs</TabsTrigger>)}
+            {!isFaculty && (<TabsTrigger value="students" className="shrink-0 text-xs py-2 px-3 rounded-xl"><Users className="w-3.5 h-3.5 mr-1.5 hidden sm:inline" />Students</TabsTrigger>)}
+            {/* Faculty & SuperAdmin see Problems tab */}
+            {(isFaculty || isSuperAdmin) && (
+              <TabsTrigger value="problems" className="shrink-0 text-xs py-2 px-3 rounded-xl"><Code2 className="w-3.5 h-3.5 mr-1.5 hidden sm:inline" />Problems & Tasks</TabsTrigger>
+            )}
             {isSuperAdmin && (
               <TabsTrigger value="super-admin" className="shrink-0 text-xs py-2 px-3 rounded-xl bg-primary/10 text-primary relative">
                 <ShieldCheck className="w-3.5 h-3.5 mr-1.5" />Super Admin
@@ -1383,8 +1416,8 @@ const Admin = ({ userRole }: AdminProps) => {
                   <Users className="h-4 w-4 text-muted-foreground" />
                 </CardHeader>
                 <CardContent>
-                  <div className="text-2xl font-bold">{getAllStudents().filter(s => s.is_active).length}</div>
-                  <p className="text-xs text-muted-foreground">{getAllStudents().length} total · {getAllStudents().filter(s => !s.is_active).length} inactive</p>
+                  <div className="text-2xl font-bold">{liveStudents.filter(s => s.is_active).length}</div>
+                  <p className="text-xs text-muted-foreground">{liveStudents.length} total · {liveStudents.filter(s => !s.is_active).length} inactive</p>
                 </CardContent>
               </Card>
 
@@ -1615,7 +1648,7 @@ const Admin = ({ userRole }: AdminProps) => {
                               <p className="text-xs text-foreground/60 truncate max-w-[300px]">{project.github_url}</p>
                               <div className="flex gap-2 mt-1">
                                 <Badge variant="default" className="text-[10px] px-2 py-0 font-medium">
-                                  {project.tech_stack?.[0] || 'Project'}
+                                  {project.tags?.[0] || 'Project'}
                                 </Badge>
                                 <Badge variant="outline" className="text-[10px] px-2 py-0 text-emerald-800 dark:text-emerald-300 border-emerald-500/40 bg-emerald-500/10 font-semibold">
                                   Supabase Persistent
@@ -1669,7 +1702,7 @@ const Admin = ({ userRole }: AdminProps) => {
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="event-status">Status</Label>
-                        <Select value={eventForm.status} onValueChange={(v) => setEventForm(prev => ({ ...prev, status: v as db.EventStatus }))}>
+                        <Select value={eventForm.status} onValueChange={(v) => setEventForm(prev => ({ ...prev, status: v as any }))}>
                           <SelectTrigger><SelectValue /></SelectTrigger>
                           <SelectContent>
                             <SelectItem value="upcoming">Upcoming</SelectItem>
@@ -1919,12 +1952,12 @@ const Admin = ({ userRole }: AdminProps) => {
                       blogPosts.map((post) => (
                         <div
                           key={post.id}
-                          className={`flex items-start justify-between p-4 border rounded-xl transition-colors ${post.is_published ? "hover:bg-primary/5" : "opacity-60 bg-muted/20"}`}
+                          className={`flex items-start justify-between p-4 border rounded-xl transition-colors ${post.published ? "hover:bg-primary/5" : "opacity-60 bg-muted/20"}`}
                         >
                           <div className="flex gap-3 flex-1 min-w-0">
-                            {post.cover_image_url ? (
+                            {post.image_url ? (
                               <img
-                                src={post.cover_image_url}
+                                src={post.image_url}
                                 alt={post.title}
                                 className="w-14 h-14 rounded-lg object-cover flex-shrink-0"
                                 onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
@@ -1939,7 +1972,7 @@ const Admin = ({ userRole }: AdminProps) => {
                                 <Badge variant="secondary" className="text-[9px] px-2 py-0">
                                   Post
                                 </Badge>
-                                {!post.is_published && (
+                                {!post.published && (
                                   <Badge variant="outline" className="text-[9px] px-2 py-0 text-amber-600 border-amber-600">
                                     Draft
                                   </Badge>
@@ -1964,10 +1997,10 @@ const Admin = ({ userRole }: AdminProps) => {
                                   variant="ghost"
                                   size="icon"
                                   onClick={() => handleTogglePublish(post)}
-                                  className={post.is_published ? "text-green-600 hover:bg-green-50" : "text-muted-foreground hover:bg-muted"}
-                                  title={post.is_published ? "Unpublish" : "Publish"}
+                                  className={post.published ? "text-green-600 hover:bg-green-50" : "text-muted-foreground hover:bg-muted"}
+                                  title={post.published ? "Unpublish" : "Publish"}
                                 >
-                                  {post.is_published ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                                  {post.published ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
                                 </Button>
                                 <Button
                                   variant="ghost"
@@ -2096,15 +2129,15 @@ const Admin = ({ userRole }: AdminProps) => {
                       publications.map((pub) => (
                         <div key={pub.id} className="flex items-start justify-between p-4 rounded-xl border bg-card hover:border-primary/50 transition-all group">
                           <div className="flex gap-4">
-                            <div className={`w-12 h-12 rounded-lg flex items-center justify-center shrink-0 ${pub.publication_type === 'book' ? 'bg-blue-500/10 text-blue-500' : 'bg-primary/10 text-primary'}`}>
-                              {pub.publication_type === 'book' ? <Book className="w-6 h-6" /> : <FileText className="w-6 h-6" />}
+                            <div className={`w-12 h-12 rounded-lg flex items-center justify-center shrink-0 ${pub.type === 'book' ? 'bg-blue-500/10 text-blue-500' : 'bg-primary/10 text-primary'}`}>
+                              {pub.type === 'book' ? <Book className="w-6 h-6" /> : <FileText className="w-6 h-6" />}
                             </div>
                             <div className="min-w-0">
                               <h4 className="font-semibold text-sm leading-tight text-foreground group-hover:text-primary transition-colors">{pub.title}</h4>
                               <p className="text-xs text-muted-foreground mt-1 font-medium">{Array.isArray(pub.authors) ? pub.authors.join(', ') : pub.authors}</p>
-                              <p className="text-[11px] text-muted-foreground line-clamp-2 mt-1.5 leading-relaxed">{pub.abstract}</p>
+                              <p className="text-[11px] text-muted-foreground line-clamp-2 mt-1.5 leading-relaxed">{pub.description}</p>
                               <div className="flex gap-2 mt-2">
-                                {pub.external_url && (
+                                {pub.link_url && (
                                   <Badge variant="outline" className="text-[9px] h-5">Link Attached</Badge>
                                 )}
                                 {pub.file_url && (
@@ -2778,6 +2811,37 @@ const Admin = ({ userRole }: AdminProps) => {
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
+                    {/* Role selector for new credential */}
+                    <div className="space-y-1.5 mb-4">
+                      <Label className="text-xs font-semibold">Assign Role</Label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setNewCredRole("member")}
+                          className={`p-2.5 rounded-xl border text-left transition-all ${
+                            newCredRole === "member"
+                              ? "border-primary bg-primary/10 ring-1 ring-primary/30"
+                              : "border-border/60 hover:border-border hover:bg-muted/40"
+                          }`}
+                        >
+                          <p className="font-semibold text-xs text-foreground">👥 Club Member</p>
+                          <p className="text-[10px] text-muted-foreground mt-0.5">Events, projects, blog & club management</p>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setNewCredRole("faculty")}
+                          className={`p-2.5 rounded-xl border text-left transition-all ${
+                            newCredRole === "faculty"
+                              ? "border-primary bg-primary/10 ring-1 ring-primary/30"
+                              : "border-border/60 hover:border-border hover:bg-muted/40"
+                          }`}
+                        >
+                          <p className="font-semibold text-xs text-foreground">🎓 Faculty Member</p>
+                          <p className="text-[10px] text-muted-foreground mt-0.5">Creates & evaluates student problems</p>
+                        </button>
+                      </div>
+                    </div>
+
                     <form
                       onSubmit={(e) => {
                         e.preventDefault();
@@ -2787,12 +2851,12 @@ const Admin = ({ userRole }: AdminProps) => {
                         const dob = (form.elements.namedItem("cred-dob") as HTMLInputElement).value;
                         const email = (form.elements.namedItem("cred-email") as HTMLInputElement).value;
                         try {
-                          const cred = createAdminCredential(name, mobile, dob, "admin", email || undefined);
+                          const cred = createAdminCredential(name, mobile, dob, newCredRole, email || undefined);
                           const loginFormat = `${name},${mobile},${dob}`;
                           // Log creation
                           addLogEntry({
                             actor: currentUserName,
-                            action: `Created admin credentials for ${cred.name}${email ? ` (${email})` : ""}`,
+                            action: `Created ${newCredRole} credentials for ${cred.name}${email ? ` (${email})` : ""}`,
                             type: "create_credential",
                             revertible: true,
                             credentialSnapshot: cred,
@@ -2887,8 +2951,15 @@ const Admin = ({ userRole }: AdminProps) => {
                                 )}
                               </div>
                               <div>
-                                <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-2 flex-wrap">
                                   <p className="font-medium text-sm">{cred.name}</p>
+                                  <Badge variant="outline" className={`text-[9px] ${
+                                    cred.role === "faculty"
+                                      ? "bg-purple-500/10 text-purple-600 border-purple-500/30"
+                                      : "bg-blue-500/10 text-blue-600 border-blue-500/30"
+                                  }`}>
+                                    {cred.role === "faculty" ? "🎓 Faculty" : "👥 Member"}
+                                  </Badge>
                                   {cred.is_blocked && (
                                     <Badge variant="destructive" className="text-[10px]">BLOCKED</Badge>
                                   )}
@@ -3044,11 +3115,15 @@ const Admin = ({ userRole }: AdminProps) => {
                                   )}
                                 </div>
                                 <div>
-                                  <div className="flex items-center gap-2">
+                                  <div className="flex items-center gap-2 flex-wrap">
                                     <p className="font-medium text-sm">{displayName}</p>
-                                    <Badge variant={user.role === "super_admin" ? "default" : "secondary"} className="text-[10px]">
-                                      {user.role === "super_admin" ? "⭐ Super" : "Admin"}
-                                    </Badge>
+                                    {user.role === "super_admin" ? (
+                                      <Badge variant="default" className="text-[10px]">⭐ Super Admin</Badge>
+                                    ) : user.role === "faculty" ? (
+                                      <Badge variant="outline" className="text-[10px] bg-purple-500/10 text-purple-600 border-purple-500/30">🎓 Faculty</Badge>
+                                    ) : (
+                                      <Badge variant="outline" className="text-[10px] bg-blue-500/10 text-blue-600 border-blue-500/30">👥 Member</Badge>
+                                    )}
                                     {user.is_blocked && (
                                       <Badge variant="destructive" className="text-[10px]">BLOCKED</Badge>
                                     )}
@@ -3062,7 +3137,22 @@ const Admin = ({ userRole }: AdminProps) => {
 
                               {/* Actions — can't modify own super_admin account */}
                               {user.role !== "super_admin" && (
-                                <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  {/* Role toggle */}
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="gap-1 text-xs"
+                                    title="Toggle Member / Faculty role"
+                                    onClick={async () => {
+                                      const newRole: AdminRole = user.role === "faculty" ? "member" : "faculty";
+                                      await updateAdminRole(userId, newRole);
+                                      setAdminUsers(prev => prev.map(u => u.id === userId ? { ...u, role: newRole } : u));
+                                      toast({ title: `Role updated to ${newRole === "faculty" ? "Faculty" : "Member"}` });
+                                    }}
+                                  >
+                                    {user.role === "faculty" ? <><Users className="w-3 h-3" /> → Member</> : <><UserCheck className="w-3 h-3" /> → Faculty</>}
+                                  </Button>
                                   {user.is_blocked ? (
                                     <Button
                                       variant="outline"

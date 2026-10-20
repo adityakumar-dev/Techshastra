@@ -161,7 +161,7 @@ const Navbar = () => {
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: "100%" }}
               transition={{ type: "spring", damping: 25, stiffness: 200 }}
-              className="fixed inset-0 bg-background/95 backdrop-blur-xl z-40 flex flex-col items-center justify-center p-6 md:hidden"
+              className="fixed inset-0 bg-background/95 backdrop-blur-xl z-40 flex flex-col items-center justify-start overflow-y-auto py-20 px-6 sm:justify-center md:hidden"
             >
               <div className="flex flex-col items-center space-y-6 w-full max-w-sm">
                 {navLinks.map((link, idx) => (

@@ -129,7 +129,7 @@ export const ProblemsList: React.FC = () => {
   // Cohort matching helper
   const matchesStudentCohort = useMemo(() => {
     return (prob: Problem) => {
-      const probCohort = prob.targetYear || prob.targetSemester;
+      const probCohort = (prob.targetYear || prob.targetSemester) as string | undefined;
       // If problem is marked for All or All Years, or unspecified, visible to everyone
       if (!probCohort || probCohort === "All" || probCohort === "All Years" || probCohort === "All Semesters") {
         return true;
