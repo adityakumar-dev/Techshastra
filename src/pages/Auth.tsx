@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import {
   verifyAdmin,
+  verifySuperAdmin,
   getAdminUsers,
   type AdminCredential,
   createAdminLoginRequest,
@@ -16,6 +17,7 @@ import {
   createAdminCredentialDB,
 } from "@/lib/services/adminService";
 import { supabase, isSupabaseConfigured } from "@/lib/supabase/client";
+import { sanitizeName, sanitizeMobile, sanitizeEmail } from "@/lib/utils/sanitize";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -43,8 +45,11 @@ import {
   ExternalLink,
   Shield,
   Sparkles,
+  Users,
+  GraduationCap,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import type { AdminRole } from "@/lib/adminStore";
 
 type AuthTab = "signin" | "register" | "status";
 
@@ -64,12 +69,14 @@ export default function Auth() {
   const [regDob, setRegDob] = useState("");
   const [regEmail, setRegEmail] = useState("");
   const [regDepartment, setRegDepartment] = useState("");
+  const [regRole, setRegRole] = useState<"member" | "faculty">("member");
 
   // Submitted Confirmation State
   const [submittedRequest, setSubmittedRequest] = useState<{
     id: string;
     name: string;
     mobile: string;
+    role: "member" | "faculty";
     date: string;
   } | null>(null);
   const [countdown, setCountdown] = useState<number | null>(null);
@@ -101,7 +108,6 @@ export default function Auth() {
   }, [countdown, navigate]);
 
   // ── 1. HANDLE SIGN IN ─────────────────────────────────────────────────────
-  // ── 1. HANDLE SIGN IN ─────────────────────────────────────────────────────
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!signInName.trim() || !signInMobile.trim() || !signInDob) {
@@ -109,27 +115,39 @@ export default function Auth() {
       return;
     }
 
+    const nameCheck = sanitizeName(signInName);
+    if (!nameCheck.valid) {
+      toast({ title: "Invalid Name", description: nameCheck.error, variant: "destructive" });
+      return;
+    }
+
+    const mobileCheck = sanitizeMobile(signInMobile);
+    if (!mobileCheck.valid) {
+      toast({ title: "Invalid Mobile", description: mobileCheck.error, variant: "destructive" });
+      return;
+    }
+
     setLoading(true);
     setBlockedAccount(null);
 
     try {
-      const sName = signInName.trim();
-      const sMobile = signInMobile.replace(/[^0-9]/g, "");
+      const sName = nameCheck.cleaned;
+      const sMobile = mobileCheck.cleaned;
       const sDob = signInDob.trim().replace(/\//g, "-");
 
       // 1. Authoritative check from Supabase PostgreSQL admin_credentials
       let dbRecord: AdminCredential | null = null;
       if (isSupabaseConfigured()) {
-        const { data: dbRows, error: dbErr } = await supabase
-          .from("admin_credentials")
-          .select("*");
+        const { data: dbRows, error: dbErr } = await (supabase
+          .from("admin_credentials" as any)
+          .select("*") as any);
 
         if (!dbErr && dbRows && dbRows.length > 0) {
-          const match = dbRows.find((r: any) => {
-            const rMobile = r.mobile.replace(/[^0-9]/g, "");
+          const match: any = (dbRows as any[]).find((r: any) => {
+            const rMobile = (r.mobile || "").replace(/[^0-9]/g, "");
             const mMatch = rMobile === sMobile || (rMobile.slice(-10) === sMobile.slice(-10) && sMobile.length >= 10);
-            const nMatch = r.name.toLowerCase().trim() === sName.toLowerCase().trim();
-            const dMatch = r.dob.trim().replace(/\//g, "-") === sDob;
+            const nMatch = (r.name || "").toLowerCase().trim() === sName.toLowerCase().trim();
+            const dMatch = (r.dob || "").trim().replace(/\//g, "-") === sDob;
             return mMatch && nMatch && dMatch;
           });
 
@@ -179,11 +197,18 @@ export default function Auth() {
 
       // ── SUCCESS: ACTIVE ADMIN FOUND ──
       if (dbRecord && !dbRecord.is_blocked) {
+        const rawRole = dbRecord.role as string;
+        const mappedRole: AdminRole = rawRole === "super_admin"
+          ? "super_admin"
+          : rawRole === "faculty"
+            ? "faculty"
+            : "member";
+
         sessionStorage.setItem(
           "ts_admin_session",
           JSON.stringify({
             userId: dbRecord.id,
-            role: dbRecord.role || "admin",
+            role: mappedRole,
             name: dbRecord.name,
             authenticated_at: new Date().toISOString(),
           })
@@ -193,7 +218,7 @@ export default function Auth() {
         logAdminAction(
           dbRecord.id,
           dbRecord.name,
-          dbRecord.role,
+          (mappedRole === "super_admin" ? "super_admin" : "admin") as any,
           "Logged into admin panel",
           "admin_sessions"
         ).catch(() => {});
@@ -264,11 +289,39 @@ export default function Auth() {
     }
   };
 
-  // ── 2. HANDLE REQUEST ACCESS (REGISTRATION) ───────────────────────────────
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!regName.trim() || !regMobile.trim() || !regDob) {
       toast({ title: "Name, Mobile, and Date of Birth are required", variant: "destructive" });
+      return;
+    }
+
+    const nameCheck = sanitizeName(regName);
+    if (!nameCheck.valid) {
+      toast({ title: "Invalid Name", description: nameCheck.error, variant: "destructive" });
+      return;
+    }
+
+    const mobileCheck = sanitizeMobile(regMobile);
+    if (!mobileCheck.valid) {
+      toast({ title: "Invalid Mobile", description: mobileCheck.error, variant: "destructive" });
+      return;
+    }
+
+    if (regEmail.trim()) {
+      const emailCheck = sanitizeEmail(regEmail);
+      if (!emailCheck.valid) {
+        toast({ title: "Invalid Email", description: emailCheck.error, variant: "destructive" });
+        return;
+      }
+    }
+
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      toast({
+        title: "Offline",
+        description: "You are currently offline. Please check your internet connection before submitting a registration request.",
+        variant: "destructive",
+      });
       return;
     }
 
@@ -317,7 +370,7 @@ export default function Auth() {
         adminName: regName.trim(),
         mobile: regMobile.trim(),
         dob: regDob,
-        role: "admin",
+        role: regRole,
         device: `${getClientDeviceString()}${regDepartment ? ` [${regDepartment}]` : ""}`,
         isNewRegistration: true,
       });
@@ -327,6 +380,7 @@ export default function Auth() {
         id: req.id,
         name: regName.trim(),
         mobile: regMobile.trim(),
+        role: regRole,
         date: new Date().toLocaleDateString(),
       });
       setCountdown(12); // 12-second gentle auto redirect
@@ -346,7 +400,6 @@ export default function Auth() {
     }
   };
 
-  // ── 3. HANDLE STATUS LOOKUP ───────────────────────────────────────────────
   const handleCheckStatus = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!statusMobile.trim()) {
@@ -354,9 +407,24 @@ export default function Auth() {
       return;
     }
 
+    const mobileCheck = sanitizeMobile(statusMobile);
+    if (!mobileCheck.valid) {
+      toast({ title: "Invalid Mobile", description: mobileCheck.error, variant: "destructive" });
+      return;
+    }
+
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      toast({
+        title: "Offline",
+        description: "You are currently offline. Please check your internet connection.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setLoading(true);
     try {
-      const record = await getRequestStatusByMobileDB(statusMobile.trim());
+      const record = await getRequestStatusByMobileDB(mobileCheck.cleaned);
       if (record) {
         setStatusResult({
           found: true,
@@ -434,6 +502,16 @@ export default function Auth() {
               <div className="flex justify-between items-center text-muted-foreground">
                 <span>Mobile:</span>
                 <span className="font-mono text-foreground">{submittedRequest.mobile}</span>
+              </div>
+              <div className="flex justify-between items-center text-muted-foreground">
+                <span>Selected Role:</span>
+                <Badge variant="outline" className={`text-[10px] font-semibold ${
+                  submittedRequest.role === "faculty"
+                    ? "bg-purple-500/10 text-purple-600 border-purple-500/30"
+                    : "bg-blue-500/10 text-blue-600 border-blue-500/30"
+                }`}>
+                  {submittedRequest.role === "faculty" ? "Faculty Member" : "Club Member"}
+                </Badge>
               </div>
               <div className="flex justify-between items-center text-muted-foreground">
                 <span>Request ID:</span>
@@ -583,7 +661,59 @@ export default function Auth() {
             <TabsContent value="register">
               <form onSubmit={handleRegisterSubmit} className="space-y-3">
                 <div className="p-2.5 rounded-lg border border-blue-500/20 bg-blue-500/5 text-xs text-muted-foreground">
-                  New member or lead? Fill in your details below. Once approved by the Super Admin, your account will be activated.
+                  Apply for admin access. Choose whether you are registering as a Club Member (full club management) or Faculty Member (coding challenges & problem tasks).
+                </div>
+
+                {/* Role Selection: Member vs Faculty */}
+                <div className="space-y-1.5">
+                  <Label className="text-xs font-semibold">Select Clearance Role</Label>
+                  <div className="grid grid-cols-2 gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => setRegRole("member")}
+                      className={`p-3 rounded-xl border text-left transition-all ${
+                        regRole === "member"
+                          ? "border-primary bg-primary/10 ring-2 ring-primary/30 shadow-sm"
+                          : "border-border/60 hover:border-border hover:bg-muted/40"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1.5">
+                        <Users className={`w-4 h-4 ${regRole === "member" ? "text-primary" : "text-muted-foreground"}`} />
+                        <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${
+                          regRole === "member" ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground"
+                        }`}>
+                          Member
+                        </span>
+                      </div>
+                      <p className="font-semibold text-xs text-foreground">Club Member</p>
+                      <p className="text-[10px] text-muted-foreground mt-0.5 leading-tight">
+                        Events, projects, blogs, gallery & club management.
+                      </p>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setRegRole("faculty")}
+                      className={`p-3 rounded-xl border text-left transition-all ${
+                        regRole === "faculty"
+                          ? "border-primary bg-primary/10 ring-2 ring-primary/30 shadow-sm"
+                          : "border-border/60 hover:border-border hover:bg-muted/40"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1.5">
+                        <GraduationCap className={`w-4 h-4 ${regRole === "faculty" ? "text-primary" : "text-muted-foreground"}`} />
+                        <span className={`text-[9px] font-semibold px-1.5 py-0.5 rounded-full ${
+                          regRole === "faculty" ? "bg-primary/20 text-primary" : "bg-muted text-muted-foreground"
+                        }`}>
+                          Faculty
+                        </span>
+                      </div>
+                      <p className="font-semibold text-xs text-foreground">Faculty Member</p>
+                      <p className="text-[10px] text-muted-foreground mt-0.5 leading-tight">
+                        Create & evaluate student coding problems & tasks.
+                      </p>
+                    </button>
+                  </div>
                 </div>
 
                 <div className="space-y-1">

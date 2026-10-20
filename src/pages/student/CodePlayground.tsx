@@ -33,6 +33,8 @@ import {
 } from "@/components/ui/resizable";
 import { toast } from "sonner";
 
+type MobileTab = "editor" | "input" | "output";
+
 const DEFAULT_TEMPLATES: Record<SupportedLanguage, string> = {
   python: `# TechShastra Cloud Python Sandbox
 import sys
@@ -119,6 +121,7 @@ export const CodePlayground: React.FC = () => {
   const [isRunning, setIsRunning] = useState<boolean>(false);
   const [output, setOutput] = useState<ExecutionResponse | null>(null);
   const [copied, setCopied] = useState(false);
+  const [mobileTab, setMobileTab] = useState<MobileTab>("editor");
 
   const handleLanguageChange = (newLang: SupportedLanguage) => {
     setLanguage(newLang);
@@ -150,209 +153,220 @@ export const CodePlayground: React.FC = () => {
     toast.success("Code copied to clipboard");
   };
 
-  return (
-    <div className="h-[calc(100vh-4rem)] flex flex-col bg-background text-foreground overflow-hidden">
-      {/* Top action toolbar */}
-      <div className="h-12 border-b border-border/40 bg-card/60 backdrop-blur-sm px-4 flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
-            <Terminal size={17} className="text-primary" />
-            <h1 className="text-xs sm:text-sm font-heading font-semibold text-foreground">
-              Sandboxed Code Playground
-            </h1>
-          </div>
-          <span className="text-[10px] hidden sm:inline-block px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
-            Real Multi-Language Compiler
-          </span>
-        </div>
+  // After run on mobile, switch to output tab automatically
+  const handleRunMobile = async () => {
+    setMobileTab("output");
+    await handleRun();
+  };
 
-        <div className="flex items-center gap-2">
-          {/* Language Selector */}
-          <Select
-            value={language}
-            onValueChange={(val) => handleLanguageChange(val as SupportedLanguage)}
-          >
-            <SelectTrigger className="h-8 text-xs font-mono rounded-xl w-36 bg-background/80 border-border/50">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {SUPPORTED_LANGUAGES.map((lang) => (
-                <SelectItem key={lang.id} value={lang.id} className="text-xs font-mono">
-                  {lang.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleCopyCode}
-            className="h-8 w-8 text-muted-foreground hover:text-foreground rounded-xl"
-            title="Copy code"
-          >
-            {copied ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
-          </Button>
-
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setCode(DEFAULT_TEMPLATES[language])}
-            className="h-8 w-8 text-muted-foreground hover:text-foreground rounded-xl"
-            title="Reset code template"
-          >
-            <RotateCcw size={14} />
-          </Button>
-
-          <Button
-            size="sm"
-            onClick={handleRun}
-            disabled={isRunning}
-            className="h-8 rounded-xl gap-1.5 text-xs font-medium shadow-sm shadow-primary/20"
-          >
-            {isRunning ? (
-              <Loader2 size={13} className="animate-spin" />
-            ) : (
-              <Play size={13} className="fill-current" />
-            )}
-            <span>Execute Code</span>
-          </Button>
-        </div>
+  // ─── Shared sub-components ──────────────────────────────────────────────
+  const EditorPanel = (
+    <div className="h-full flex flex-col bg-[#0d1117] text-white">
+      <div className="h-8 px-3 border-b border-white/10 bg-[#161b22] flex items-center justify-between text-[11px] text-gray-400 font-mono select-none">
+        <span className="flex items-center gap-1.5">
+          <Code2 size={13} className="text-primary" />
+          main.{language === "python" ? "py" : language === "cpp" ? "cpp" : language === "java" ? "java" : "js"}
+        </span>
+        <span>Tab = 2 spaces</span>
       </div>
-
-      {/* Main Resizable split area */}
-      <div className="flex-1 min-h-0">
-        <ResizablePanelGroup direction="horizontal" className="h-full">
-          {/* Left panel: Code Editor */}
-          <ResizablePanel defaultSize={60} minSize={30}>
-            <div className="h-full flex flex-col bg-[#0d1117] text-white">
-              <div className="h-8 px-3 border-b border-white/10 bg-[#161b22] flex items-center justify-between text-[11px] text-gray-400 font-mono select-none">
-                <span className="flex items-center gap-1.5">
-                  <Code2 size={13} className="text-primary" />
-                  main.{language === "python" ? "py" : language === "cpp" ? "cpp" : language === "java" ? "java" : "js"}
-                </span>
-                <span>Press Tab to indent</span>
-              </div>
-
-              <div className="flex-1 relative font-mono text-xs overflow-hidden">
-                <textarea
-                  value={code}
-                  onChange={(e) => setCode(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Tab") {
-                      e.preventDefault();
-                      const start = e.currentTarget.selectionStart;
-                      const end = e.currentTarget.selectionEnd;
-                      const val = e.currentTarget.value;
-                      setCode(val.substring(0, start) + "  " + val.substring(end));
-                      setTimeout(() => {
-                        if (e.target) {
-                          (e.target as HTMLTextAreaElement).selectionStart = start + 2;
-                          (e.target as HTMLTextAreaElement).selectionEnd = start + 2;
-                        }
-                      }, 0);
-                    }
-                  }}
-                  className="w-full h-full p-4 bg-transparent text-gray-100 resize-none outline-none font-mono leading-relaxed selection:bg-primary/30"
-                  spellCheck={false}
-                />
-              </div>
-            </div>
-          </ResizablePanel>
-
-          <ResizableHandle withHandle />
-
-          {/* Right panel: STDIN Input (top) + Terminal Output (bottom) */}
-          <ResizablePanel defaultSize={40} minSize={25}>
-            <ResizablePanelGroup direction="vertical">
-              {/* STDIN Input */}
-              <ResizablePanel defaultSize={35} minSize={15}>
-                <div className="h-full flex flex-col bg-card/60 backdrop-blur-sm border-b border-border/40">
-                  <div className="h-8 px-3 border-b border-border/30 bg-muted/30 flex items-center justify-between text-xs text-muted-foreground">
-                    <span className="font-semibold text-[11px] uppercase tracking-wider">
-                      Standard Input (STDIN)
-                    </span>
-                    <button
-                      onClick={() => setStdin("")}
-                      className="text-[10px] hover:text-foreground text-muted-foreground"
-                    >
-                      Clear
-                    </button>
-                  </div>
-                  <div className="flex-1 p-2">
-                    <textarea
-                      value={stdin}
-                      onChange={(e) => setStdin(e.target.value)}
-                      placeholder="Optional inputs fed to program standard input..."
-                      className="w-full h-full p-2 bg-muted/20 border border-border/40 rounded-lg text-xs font-mono resize-none outline-none text-foreground placeholder:text-muted-foreground/60"
-                      spellCheck={false}
-                    />
-                  </div>
-                </div>
-              </ResizablePanel>
-
-              <ResizableHandle withHandle />
-
-              {/* Terminal Output */}
-              <ResizablePanel defaultSize={65} minSize={25}>
-                <div className="h-full flex flex-col bg-[#0b0e14] text-gray-200 font-mono text-xs">
-                  <div className="h-8 px-3 border-b border-white/10 bg-[#12161f] flex items-center justify-between text-[11px] text-gray-400 select-none">
-                    <div className="flex items-center gap-1.5">
-                      <Terminal size={13} className="text-emerald-400" />
-                      <span>Console Output</span>
-                    </div>
-                    {output && (
-                      <span className="text-[10px] text-gray-500">
-                        {output.executionTimeMs} ms • {output.status}
-                      </span>
-                    )}
-                  </div>
-
-                  <div className="flex-1 p-3 overflow-y-auto font-mono whitespace-pre-wrap scrollbar-thin">
-                    {isRunning ? (
-                      <div className="flex items-center gap-2 text-gray-400 py-6 justify-center">
-                        <Loader2 size={15} className="animate-spin text-primary" />
-                        <span>Compiling and executing in isolated sandbox...</span>
-                      </div>
-                    ) : !output ? (
-                      <span className="text-gray-500 italic">
-                        Ready. Click "Execute Code" to run your program.
-                      </span>
-                    ) : output.status === "Compilation Error" || output.status === "Runtime Error" ? (
-                      <div className="space-y-2 text-rose-400">
-                        <p className="font-bold">❌ {output.status}:</p>
-                        <pre className="text-rose-300 text-[11px]">
-                          {output.stderr || output.compileError || output.stdout}
-                        </pre>
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        {output.stdout ? (
-                          <pre className="text-emerald-300 font-mono text-xs">
-                            {output.stdout}
-                          </pre>
-                        ) : (
-                          <span className="text-gray-500 italic">
-                            [Program terminated successfully with no standard output]
-                          </span>
-                        )}
-                        {output.stderr && (
-                          <div className="pt-2 border-t border-white/10 text-amber-400 text-[11px]">
-                            <p className="font-semibold">Stderr log:</p>
-                            <pre>{output.stderr}</pre>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </ResizablePanel>
-            </ResizablePanelGroup>
-          </ResizablePanel>
-        </ResizablePanelGroup>
+      <div className="flex-1 relative font-mono text-xs overflow-hidden">
+        <textarea
+          value={code}
+          onChange={(e) => setCode(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Tab") {
+              e.preventDefault();
+              const start = e.currentTarget.selectionStart;
+              const end = e.currentTarget.selectionEnd;
+              const val = e.currentTarget.value;
+              setCode(val.substring(0, start) + "  " + val.substring(end));
+              setTimeout(() => {
+                if (e.target) {
+                  (e.target as HTMLTextAreaElement).selectionStart = start + 2;
+                  (e.target as HTMLTextAreaElement).selectionEnd = start + 2;
+                }
+              }, 0);
+            }
+          }}
+          className="w-full h-full p-4 bg-transparent text-gray-100 resize-none outline-none font-mono leading-relaxed selection:bg-primary/30"
+          spellCheck={false}
+        />
       </div>
     </div>
+  );
+
+  const InputPanel = (
+    <div className="h-full flex flex-col bg-card/60 backdrop-blur-sm">
+      <div className="h-8 px-3 border-b border-border/30 bg-muted/30 flex items-center justify-between text-xs text-muted-foreground">
+        <span className="font-semibold text-[11px] uppercase tracking-wider">Standard Input (STDIN)</span>
+        <button onClick={() => setStdin("")} className="text-[10px] hover:text-foreground text-muted-foreground">Clear</button>
+      </div>
+      <div className="flex-1 p-2">
+        <textarea
+          value={stdin}
+          onChange={(e) => setStdin(e.target.value)}
+          placeholder="Optional inputs fed to program standard input..."
+          className="w-full h-full p-2 bg-muted/20 border border-border/40 rounded-lg text-xs font-mono resize-none outline-none text-foreground placeholder:text-muted-foreground/60"
+          spellCheck={false}
+        />
+      </div>
+    </div>
+  );
+
+  const OutputPanel = (
+    <div className="h-full flex flex-col bg-[#0b0e14] text-gray-200 font-mono text-xs">
+      <div className="h-8 px-3 border-b border-white/10 bg-[#12161f] flex items-center justify-between text-[11px] text-gray-400 select-none">
+        <div className="flex items-center gap-1.5">
+          <Terminal size={13} className="text-emerald-400" />
+          <span>Console Output</span>
+        </div>
+        {output && (
+          <span className="text-[10px] text-gray-500">
+            {output.executionTimeMs} ms • {output.status}
+          </span>
+        )}
+      </div>
+      <div className="flex-1 p-3 overflow-y-auto font-mono whitespace-pre-wrap scrollbar-thin">
+        {isRunning ? (
+          <div className="flex items-center gap-2 text-gray-400 py-6 justify-center">
+            <Loader2 size={15} className="animate-spin text-primary" />
+            <span>Compiling and executing in isolated sandbox...</span>
+          </div>
+        ) : !output ? (
+          <span className="text-gray-500 italic">Ready. Click "Execute Code" to run your program.</span>
+        ) : output.status === "Compilation Error" || output.status === "Runtime Error" ? (
+          <div className="space-y-2 text-rose-400">
+            <p className="font-bold">❌ {output.status}:</p>
+            <pre className="text-rose-300 text-[11px]">{output.stderr || output.compileError || output.stdout}</pre>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {output.stdout ? (
+              <pre className="text-emerald-300 font-mono text-xs">{output.stdout}</pre>
+            ) : (
+              <span className="text-gray-500 italic">[Program terminated successfully with no standard output]</span>
+            )}
+            {output.stderr && (
+              <div className="pt-2 border-t border-white/10 text-amber-400 text-[11px]">
+                <p className="font-semibold">Stderr log:</p>
+                <pre>{output.stderr}</pre>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  // ─── Shared toolbar ──────────────────────────────────────────────────────
+  const Toolbar = ({ isMobile }: { isMobile?: boolean }) => (
+    <div className={`${isMobile ? "h-12" : "h-12"} border-b border-border/40 bg-card/60 backdrop-blur-sm px-3 flex items-center justify-between shrink-0`}>
+      <div className="flex items-center gap-2">
+        <Terminal size={16} className="text-primary" />
+        <h1 className="text-xs sm:text-sm font-heading font-semibold text-foreground hidden sm:block">
+          Code Playground
+        </h1>
+        <span className="text-[10px] hidden lg:inline-block px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20">
+          Real Multi-Language Compiler
+        </span>
+      </div>
+      <div className="flex items-center gap-1.5">
+        <Select value={language} onValueChange={(val) => handleLanguageChange(val as SupportedLanguage)}>
+          <SelectTrigger className="h-8 text-xs font-mono rounded-xl w-28 sm:w-36 bg-background/80 border-border/50">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {SUPPORTED_LANGUAGES.map((lang) => (
+              <SelectItem key={lang.id} value={lang.id} className="text-xs font-mono">{lang.name}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Button variant="ghost" size="icon" onClick={handleCopyCode} className="h-8 w-8 text-muted-foreground hover:text-foreground rounded-xl" title="Copy code">
+          {copied ? <Check size={14} className="text-emerald-500" /> : <Copy size={14} />}
+        </Button>
+        <Button variant="ghost" size="icon" onClick={() => setCode(DEFAULT_TEMPLATES[language])} className="h-8 w-8 text-muted-foreground hover:text-foreground rounded-xl" title="Reset">
+          <RotateCcw size={14} />
+        </Button>
+        <Button size="sm" onClick={isMobile ? handleRunMobile : handleRun} disabled={isRunning}
+          className="h-8 rounded-xl gap-1 text-xs font-medium shadow-sm shadow-primary/20">
+          {isRunning ? <Loader2 size={13} className="animate-spin" /> : <Play size={13} className="fill-current" />}
+          <span className="hidden sm:inline">Execute</span>
+          <span className="sm:hidden">Run</span>
+        </Button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div className="h-[calc(100vh-4rem)] flex flex-col bg-background text-foreground overflow-hidden">
+
+      {/* ── MOBILE LAYOUT (< md) ───────────────────────────────────────── */}
+      <div className="flex flex-col h-full md:hidden">
+        <Toolbar isMobile />
+        {/* Tab switcher */}
+        <div className="flex border-b border-border/40 bg-card/40 shrink-0">
+          {(["editor", "input", "output"] as MobileTab[]).map((tab) => (
+            <button
+              key={tab}
+              onClick={() => setMobileTab(tab)}
+              className={`flex-1 py-2.5 text-xs font-medium capitalize transition-colors ${
+                mobileTab === tab
+                  ? "text-primary border-b-2 border-primary bg-primary/5"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {tab === "editor" && <Code2 size={13} className="inline mr-1" />}
+              {tab === "input" && <Terminal size={13} className="inline mr-1" />}
+              {tab === "output" && <Cpu size={13} className="inline mr-1" />}
+              {tab}
+              {tab === "output" && output && !isRunning && (
+                <span className={`ml-1 w-1.5 h-1.5 rounded-full inline-block ${
+                  output.status === "Success" ? "bg-emerald-500" : "bg-rose-500"
+                }`} />
+              )}
+            </button>
+          ))}
+        </div>
+        {/* Panel area */}
+        <div className="flex-1 min-h-0 overflow-hidden">
+          {mobileTab === "editor" && EditorPanel}
+          {mobileTab === "input" && InputPanel}
+          {mobileTab === "output" && OutputPanel}
+        </div>
+      </div>
+
+      {/* ── DESKTOP LAYOUT (≥ md) ───────────────────────────────────────── */}
+      <div className="hidden md:flex flex-col h-full">
+        <Toolbar />
+        {/* Main Resizable split area */}
+        <div className="flex-1 min-h-0">
+          <ResizablePanelGroup direction="horizontal" className="h-full">
+            {/* Left panel: Code Editor */}
+            <ResizablePanel defaultSize={60} minSize={30}>
+              {EditorPanel}
+            </ResizablePanel>
+
+            <ResizableHandle withHandle />
+
+            {/* Right panel: STDIN Input (top) + Terminal Output (bottom) */}
+            <ResizablePanel defaultSize={40} minSize={25}>
+              <ResizablePanelGroup direction="vertical">
+                <ResizablePanel defaultSize={35} minSize={15}>
+                  {InputPanel}
+                </ResizablePanel>
+                <ResizableHandle withHandle />
+                <ResizablePanel defaultSize={65} minSize={25}>
+                  {OutputPanel}
+                </ResizablePanel>
+              </ResizablePanelGroup>
+            </ResizablePanel>
+          </ResizablePanelGroup>
+        </div>
+      </div>
+    </div>
+
   );
 };
 
 export default CodePlayground;
+

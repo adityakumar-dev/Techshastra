@@ -15,8 +15,8 @@ interface FAQ {
   id: string;
   question: string;
   answer: string;
-  category: string | null;
-  order_index: number;
+  category?: string | null;
+  order_index?: number;
 }
 
 const FAQ = () => {
@@ -44,7 +44,13 @@ const FAQ = () => {
     } catch (_e) {}
     try {
       const data = await getLocalFAQs();
-      setFaqs(data);
+      setFaqs((data as any[]).map((d: any) => ({
+        id: d.id,
+        question: d.question,
+        answer: d.answer,
+        category: d.category ?? null,
+        order_index: d.order_index ?? 0,
+      })));
     } catch (error) {
       console.error("Error fetching FAQs:", error);
     } finally {

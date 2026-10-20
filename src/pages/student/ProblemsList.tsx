@@ -8,6 +8,8 @@ import {
   type Submission,
 } from "@/lib/codingStore";
 import { getPublishedProblems } from "@/lib/services/problemService";
+import { getStudentByGithub, getStudentById } from "@/lib/studentStore";
+import { getStudentByUserId, getStudentByUsername } from "@/lib/services/studentService";
 import {
   Search,
   Filter,
@@ -36,8 +38,52 @@ export const ProblemsList: React.FC = () => {
   const [search, setSearch] = useState("");
   const [difficultyFilter, setDifficultyFilter] = useState<string>("All");
   const [statusFilter, setStatusFilter] = useState<string>("All");
-  const [semesterFilter, setSemesterFilter] = useState<string>("All");
   const [selectedTag, setSelectedTag] = useState<string>("All");
+  const [studentProfile, setStudentProfile] = useState<{ year?: string | null; course?: string | null } | null>(null);
+
+  // Load student profile to get registered academic year & course
+  useEffect(() => {
+    if (!session) return;
+    if (session.githubUsername) {
+      const local = getStudentByGithub(session.githubUsername);
+      if (local && local.year) {
+        setStudentProfile({ year: local.year, course: local.course });
+        return;
+      }
+    }
+    if (session.studentId) {
+      const local = getStudentById(session.studentId);
+      if (local && local.year) {
+        setStudentProfile({ year: local.year, course: local.course });
+        return;
+      }
+    }
+    // Remote fallback
+    if (session.studentId) {
+      getStudentByUserId(session.studentId).then((res) => {
+        if (res && res.year) {
+          setStudentProfile({ year: res.year, course: res.course });
+        }
+      }).catch(() => {});
+    } else if (session.githubUsername) {
+      getStudentByUsername(session.githubUsername).then((res) => {
+        if (res && res.year) {
+          setStudentProfile({ year: res.year, course: res.course });
+        }
+      }).catch(() => {});
+    }
+  }, [session]);
+
+  // Standardize student's academic year (e.g., "2nd Year")
+  const studentAcademicYear = useMemo(() => {
+    if (!studentProfile?.year) return null;
+    const raw = studentProfile.year.trim().toLowerCase();
+    if (raw.includes("1") || raw.includes("first")) return "1st Year";
+    if (raw.includes("2") || raw.includes("second")) return "2nd Year";
+    if (raw.includes("3") || raw.includes("third")) return "3rd Year";
+    if (raw.includes("4") || raw.includes("fourth") || raw.includes("final")) return "4th Year";
+    return null;
+  }, [studentProfile]);
 
   useEffect(() => {
     let active = true;
@@ -80,6 +126,34 @@ export const ProblemsList: React.FC = () => {
     return Array.from(set);
   }, [problems]);
 
+  // Cohort matching helper
+  const matchesStudentCohort = useMemo(() => {
+    return (prob: Problem) => {
+      const probCohort = (prob.targetYear || prob.targetSemester) as string | undefined;
+      // If problem is marked for All or All Years, or unspecified, visible to everyone
+      if (!probCohort || probCohort === "All" || probCohort === "All Years" || probCohort === "All Semesters") {
+        return true;
+      }
+      // If student is not logged in or has no academic year recorded, show all
+      if (!studentAcademicYear) {
+        return true;
+      }
+      // Normalize problem cohort
+      const cleanProb = probCohort.trim().toLowerCase();
+      let probYear: string | null = null;
+      if (cleanProb.includes("1") || cleanProb.includes("first") || cleanProb.includes("sem 1") || cleanProb.includes("sem 2")) {
+        probYear = "1st Year";
+      } else if (cleanProb.includes("2") || cleanProb.includes("second") || cleanProb.includes("sem 3") || cleanProb.includes("sem 4")) {
+        probYear = "2nd Year";
+      } else if (cleanProb.includes("3") || cleanProb.includes("third") || cleanProb.includes("sem 5") || cleanProb.includes("sem 6")) {
+        probYear = "3rd Year";
+      } else if (cleanProb.includes("4") || cleanProb.includes("fourth") || cleanProb.includes("final") || cleanProb.includes("sem 7") || cleanProb.includes("sem 8")) {
+        probYear = "4th Year";
+      }
+      return probYear === studentAcademicYear;
+    };
+  }, [studentAcademicYear]);
+
   // Filtered problems
   const filteredProblems = useMemo(() => {
     return problems.filter((p) => {
@@ -93,12 +167,8 @@ export const ProblemsList: React.FC = () => {
       const matchesDifficulty =
         difficultyFilter === "All" || p.difficulty === difficultyFilter;
 
-      // Semester
-      const matchesSemester =
-        semesterFilter === "All" ||
-        !p.targetSemester ||
-        p.targetSemester === "All" ||
-        p.targetSemester === semesterFilter;
+      // Cohort matching based on student's registered year (automatic)
+      const matchesCohort = matchesStudentCohort(p);
 
       // Status
       const isSolved = solvedProblemIds.has(p.id);
@@ -113,13 +183,13 @@ export const ProblemsList: React.FC = () => {
       const matchesTag =
         selectedTag === "All" || p.tags.includes(selectedTag);
 
-      return matchesSearch && matchesDifficulty && matchesSemester && matchesStatus && matchesTag;
+      return matchesSearch && matchesDifficulty && matchesCohort && matchesStatus && matchesTag;
     });
   }, [
     problems,
     search,
     difficultyFilter,
-    semesterFilter,
+    matchesStudentCohort,
     statusFilter,
     selectedTag,
     solvedProblemIds,
@@ -152,11 +222,20 @@ export const ProblemsList: React.FC = () => {
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5 flex-wrap">
+          {studentAcademicYear && (
+            <Badge
+              variant="outline"
+              className="text-xs px-3 py-1 font-medium border-purple-500/40 text-purple-900 dark:text-purple-300 bg-purple-500/15 flex items-center gap-1.5 shadow-xs"
+            >
+              <GraduationCap size={13} className="text-purple-600 dark:text-purple-400" />
+              <span>Your Curriculum: <strong>{studentAcademicYear}</strong>{studentProfile?.course ? ` · ${studentProfile.course}` : ""}</span>
+            </Badge>
+          )}
           <Badge variant="outline" className="text-xs px-3 py-1 font-normal">
-            Total Problems: <span className="font-semibold ml-1">{problems.length}</span>
+            Problems: <span className="font-semibold ml-1">{filteredProblems.length}</span>
           </Badge>
-          <Badge variant="outline" className="text-xs px-3 py-1 font-normal text-emerald-500 border-emerald-500/30">
+          <Badge variant="outline" className="text-xs px-3 py-1 font-normal text-emerald-600 dark:text-emerald-400 border-emerald-500/30">
             Solved: <span className="font-semibold ml-1">{solvedProblemIds.size}</span>
           </Badge>
         </div>
@@ -178,27 +257,6 @@ export const ProblemsList: React.FC = () => {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {/* Semester Filter */}
-          <div className="flex items-center rounded-xl glass border border-white/30 dark:border-white/10 p-1 text-xs overflow-x-auto">
-            <span className="text-[10px] text-muted-foreground font-semibold px-2 flex items-center gap-1 shrink-0">
-              <GraduationCap size={12} className="text-primary" />
-              Cohort:
-            </span>
-            {["All", "Sem 1", "Sem 2", "Sem 3", "Sem 4", "Sem 5", "Sem 6", "Sem 7", "Sem 8"].map((sem) => (
-              <button
-                key={sem}
-                onClick={() => setSemesterFilter(sem)}
-                className={`px-2 py-0.5 rounded-lg text-[11px] transition-all shrink-0 ${
-                  semesterFilter === sem
-                    ? "bg-primary text-primary-foreground font-semibold shadow-xs"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                {sem}
-              </button>
-            ))}
-          </div>
-
           {/* Difficulty Filter */}
           <div className="flex items-center rounded-xl glass border border-white/30 dark:border-white/10 p-1 text-xs">
             {["All", "Easy", "Medium", "Hard"].map((diff) => (
@@ -330,7 +388,11 @@ export const ProblemsList: React.FC = () => {
                         className="text-[10px] px-2 py-0.5 border-purple-500/30 text-purple-800 dark:text-purple-300 bg-purple-500/10 font-medium flex items-center gap-1"
                       >
                         <GraduationCap size={11} />
-                        {prob.targetSemester && prob.targetSemester !== "All" ? prob.targetSemester : "All Semesters"}
+                        {prob.targetYear && prob.targetYear !== "All"
+                          ? prob.targetYear
+                          : prob.targetSemester && prob.targetSemester !== "All"
+                          ? prob.targetSemester
+                          : "All Years"}
                       </Badge>
 
                       <span className="text-[10px] text-muted-foreground font-mono">

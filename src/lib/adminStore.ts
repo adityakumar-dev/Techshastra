@@ -1,5 +1,5 @@
 // ─── TYPES ───────────────────────────────────────────────────────────
-export type AdminRole = "super_admin" | "admin";
+export type AdminRole = "super_admin" | "admin" | "member" | "faculty";
 
 export interface AdminCredential {
   id: string;
@@ -32,6 +32,7 @@ import {
   getSuperAdminFromDB,
   saveSuperAdminToDB,
 } from "./services/adminService";
+import { supabase, isSupabaseConfigured } from "./supabase/client";
 
 // ─── STORAGE KEYS ────────────────────────────────────────────────────
 const STORAGE_KEY        = "ts_admin_credentials";
@@ -118,7 +119,16 @@ export const isSuperAdminDefault = (): boolean => isSuperAdminDefaultLocal();
 // ─── STORAGE HELPERS ─────────────────────────────────────────────────
 const getCredentials = (): AdminCredential[] => {
   const data = localStorage.getItem(STORAGE_KEY);
-  return data ? JSON.parse(data) : [];
+  if (!data) return [];
+  try {
+    const list: any[] = JSON.parse(data);
+    return list.map((c) => ({
+      ...c,
+      role: c.role === "super_admin" ? "super_admin" : c.role === "faculty" ? "faculty" : "member",
+    }));
+  } catch {
+    return [];
+  }
 };
 
 export const getStoredCredentials = getCredentials;
@@ -252,7 +262,8 @@ export const verifyAdmin = (
 
   if (!admin) return { success: false, blocked: false };
   if (admin.is_blocked) return { success: false, blocked: true, name: admin.name };
-  return { success: true, role: admin.role, id: admin.id };
+  const effectiveRole: AdminRole = admin.role === "faculty" ? "faculty" : "member";
+  return { success: true, role: effectiveRole, id: admin.id };
 };
 
 /** Get user role by ID */
@@ -260,7 +271,8 @@ export const getUserRole = async (userId: string): Promise<AdminRole | null> => 
   if (userId === "super_admin") return "super_admin";
   const creds = getCredentials();
   const admin = creds.find(c => c.id === userId);
-  return admin ? admin.role : null;
+  if (!admin) return null;
+  return admin.role === "faculty" ? "faculty" : "member";
 };
 
 /** Check if user is blocked */
@@ -277,18 +289,26 @@ export const getAdminUsers = async (): Promise<AdminCredential[]> => {
   try {
     const remote = await getAdminCredentialsDB();
     if (remote && remote.length >= 0) {
-      const mapped: AdminCredential[] = remote.map((r) => ({
-        id: r.id,
-        name: r.name,
-        mobile: r.mobile,
-        dob: r.dob,
-        email: r.email || undefined,
-        role: r.role as AdminRole,
-        is_blocked: r.is_blocked,
-        blocked_at: r.blocked_at || undefined,
-        block_reason: r.block_reason || undefined,
-        created_at: r.created_at,
-      }));
+      const mapped: AdminCredential[] = remote.map((r) => {
+        const rawRole = r.role as string;
+        const role: AdminRole = rawRole === "super_admin"
+          ? "super_admin"
+          : rawRole === "faculty"
+            ? "faculty"
+            : "member";
+        return {
+          id: r.id,
+          name: r.name,
+          mobile: r.mobile,
+          dob: r.dob,
+          email: r.email || undefined,
+          role,
+          is_blocked: r.is_blocked,
+          blocked_at: r.blocked_at || undefined,
+          block_reason: r.block_reason || undefined,
+          created_at: r.created_at,
+        };
+      });
       // Overwrite local credentials cache with authoritative DB state
       saveCredentials(mapped);
       return mapped;
@@ -301,18 +321,20 @@ export const createAdminCredential = (
   name: string,
   mobile: string,
   dob: string,
-  role: AdminRole = "admin",
+  role: AdminRole = "member",
   email?: string
 ): AdminCredential => {
   const creds = getCredentials();
   const id = crypto.randomUUID();
+  // Ensure legacy or ambiguous roles normalize
+  const normalizedRole: AdminRole = role === "faculty" ? "faculty" : "member";
   const newCred: AdminCredential = {
     id,
     name: name.trim(),
     mobile: mobile.trim(),
     dob: dob.trim(),
     email: email?.trim(),
-    role,
+    role: normalizedRole,
     is_blocked: false,
     created_at: new Date().toISOString(),
   };
@@ -326,13 +348,39 @@ export const createAdminCredential = (
     mobile: newCred.mobile,
     dob: newCred.dob,
     email: newCred.email || null,
-    role,
+    role: normalizedRole,
     is_blocked: false,
   }).catch((err) => {
     console.warn("Failed to sync new admin credential to Supabase:", err);
   });
 
   return newCred;
+};
+
+export const updateAdminRole = async (userId: string, newRole: AdminRole): Promise<void> => {
+  const creds = getCredentials();
+  const target = creds.find(c => c.id === userId);
+  const mobile = target?.mobile;
+
+  const index = creds.findIndex(c => c.id === userId);
+  if (index !== -1) {
+    creds[index].role = newRole;
+    saveCredentials(creds);
+  }
+
+  try {
+    if (isSupabaseConfigured()) {
+      let query = supabase.from('admin_credentials').update({ role: newRole });
+      if (mobile) {
+        query = query.or(`id.eq.${userId},mobile.eq.${mobile}`);
+      } else {
+        query = query.eq('id', userId);
+      }
+      await query;
+    }
+  } catch (e) {
+    console.warn("Failed to update admin role in Supabase:", e);
+  }
 };
 
 export const blockAdmin = (userId: string, reason?: string): void => {

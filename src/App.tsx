@@ -8,6 +8,9 @@ import { StudentAuthProvider } from "@/hooks/useStudentAuth";
 import { Loader2 } from "lucide-react";
 import { getStoredPageVisibility } from "./lib/adminStore";
 
+import { ErrorBoundary } from "./components/ErrorBoundary";
+import { NetworkStatusBanner } from "./components/NetworkStatusBanner";
+
 // ─── Eager (critical path) ───────────────────────────────────────────
 import Index from "./pages/Index";
 import Auth from "./pages/Auth";
@@ -67,14 +70,16 @@ function PageGuard({ path, children }: { path: string; children: React.ReactNode
 }
 
 const App = () => (
-  <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
-    <StudentAuthProvider>
-      <TooltipProvider>
-        <Toaster />
-        <Sonner />
-        <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-          <Suspense fallback={<PageLoader />}>
-            <Routes>
+  <ErrorBoundary>
+    <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+      <StudentAuthProvider>
+        <TooltipProvider>
+          <Toaster />
+          <Sonner />
+          <NetworkStatusBanner />
+          <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+            <Suspense fallback={<PageLoader />}>
+              <Routes>
               {/* ── Public: Eager ────────────────── */}
               <Route path="/" element={<Index />} />
               <Route path="/auth" element={<Auth />} />
@@ -164,9 +169,9 @@ const App = () => (
                 </ProtectedRoute>
               } />
 
-              {/* ── Super Admin Portal ────────────── */}
-              <Route path="/superadmin" element={<SuperAdmin />} />
-              <Route path="/super-admin" element={<Navigate to="/superadmin" replace />} />
+              {/* ── Super Admin Portal (Consolidated into Admin Panel) ────────────── */}
+              <Route path="/superadmin" element={<Navigate to="/admin?tab=super-admin" replace />} />
+              <Route path="/super-admin" element={<Navigate to="/admin?tab=super-admin" replace />} />
 
               {/* ── 404 ──────────────────────────── */}
               <Route path="*" element={<NotFound />} />
@@ -176,6 +181,7 @@ const App = () => (
       </TooltipProvider>
     </StudentAuthProvider>
   </ThemeProvider>
+  </ErrorBoundary>
 );
 
 export default App;

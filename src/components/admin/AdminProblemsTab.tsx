@@ -7,7 +7,8 @@ import {
   toggleProblemPublish,
   type CodingProblem,
   type ProblemDifficulty,
-  type TargetSemester,
+  type TargetYear,
+  YEAR_PRESETS,
   getDefaultStarterCode,
 } from "@/lib/services/problemService";
 import { type SupportedLanguage, type TestCase } from "@/lib/services/codeExecutionService";
@@ -107,17 +108,7 @@ const TAG_PRESETS = [
   "Sliding Window",
 ];
 
-export const SEMESTER_PRESETS: TargetSemester[] = [
-  "All",
-  "Sem 1",
-  "Sem 2",
-  "Sem 3",
-  "Sem 4",
-  "Sem 5",
-  "Sem 6",
-  "Sem 7",
-  "Sem 8",
-];
+export const COHORT_YEAR_PRESETS: TargetYear[] = YEAR_PRESETS;
 
 const POINTS_PRESETS = [30, 50, 80, 100, 150];
 
@@ -131,7 +122,7 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
   const [search, setSearch] = useState("");
   const [difficultyFilter, setDifficultyFilter] = useState<string>("All");
   const [facultyFilter, setFacultyFilter] = useState<string>("All");
-  const [semesterFilter, setSemesterFilter] = useState<string>("All");
+  const [yearFilter, setYearFilter] = useState<string>("All");
 
   // Modal editor state
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -143,7 +134,7 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
   const [category, setCategory] = useState("Algorithms");
   const [difficulty, setDifficulty] = useState<ProblemDifficulty>("Easy");
   const [points, setPoints] = useState(50);
-  const [targetSemester, setTargetSemester] = useState<TargetSemester>("All");
+  const [targetYear, setTargetYear] = useState<TargetYear>("All");
   const [publishedBy, setPublishedBy] = useState(currentAdminName);
   const [isPublished, setIsPublished] = useState(true);
   const [description, setDescription] = useState("");
@@ -197,11 +188,24 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
     else if (/\b(medium)\b/i.test(clean)) setDifficulty("Medium");
     else if (/\b(easy)\b/i.test(clean)) setDifficulty("Easy");
 
-    // 3. Semester
-    const semMatch = clean.match(/(?:semester|sem)\s*[:#\-\s]?\s*([1-8])/i);
-    if (semMatch) {
-      const semNum = semMatch[1];
-      setTargetSemester(`Sem ${semNum}` as TargetSemester);
+    // 3. Academic Year
+    if (/1st\s*year|first\s*year|\byear\s*1\b/i.test(clean)) {
+      setTargetYear("1st Year");
+    } else if (/2nd\s*year|second\s*year|\byear\s*2\b/i.test(clean)) {
+      setTargetYear("2nd Year");
+    } else if (/3rd\s*year|third\s*year|\byear\s*3\b/i.test(clean)) {
+      setTargetYear("3rd Year");
+    } else if (/4th\s*year|fourth\s*year|final\s*year|\byear\s*4\b/i.test(clean)) {
+      setTargetYear("4th Year");
+    } else {
+      const semMatch = clean.match(/(?:semester|sem)\s*[:#\-\s]?\s*([1-8])/i);
+      if (semMatch) {
+        const sem = parseInt(semMatch[1], 10);
+        if (sem <= 2) setTargetYear("1st Year");
+        else if (sem <= 4) setTargetYear("2nd Year");
+        else if (sem <= 6) setTargetYear("3rd Year");
+        else setTargetYear("4th Year");
+      }
     }
 
     // 4. Constraints
@@ -370,12 +374,13 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
       const matchesFaculty =
         !isSuperAdmin || facultyFilter === "All" || p.publishedBy === facultyFilter;
 
-      const matchesSemester =
-        semesterFilter === "All" || (p.targetSemester || "All") === semesterFilter;
+      const probYear = p.targetYear || p.targetSemester || "All";
+      const matchesYear =
+        yearFilter === "All" || probYear === yearFilter;
 
-      return matchesSearch && matchesDiff && matchesFaculty && matchesSemester;
+      return matchesSearch && matchesDiff && matchesFaculty && matchesYear;
     });
-  }, [scopedProblems, search, difficultyFilter, facultyFilter, semesterFilter, isSuperAdmin]);
+  }, [scopedProblems, search, difficultyFilter, facultyFilter, yearFilter, isSuperAdmin]);
 
   const openNewProblemDialog = () => {
     const defaults = getDefaultStarterCode();
@@ -384,7 +389,7 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
     setCategory("Algorithms");
     setDifficulty("Easy");
     setPoints(50);
-    setTargetSemester("All");
+    setTargetYear("All");
     setOcrRawText("");
     setShowRawOcr(false);
     // Locked strictly to logged in admin identity
@@ -421,7 +426,7 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
     setCategory(prob.category || "Algorithms");
     setDifficulty(prob.difficulty);
     setPoints(prob.points);
-    setTargetSemester(prob.targetSemester || "All");
+    setTargetYear((prob.targetYear || prob.targetSemester || "All") as TargetYear);
     setOcrRawText("");
     setShowRawOcr(false);
     // If not super admin, lock to currentAdminName
@@ -534,7 +539,8 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
         difficulty,
         category: category.trim(),
         points: Number(points) || 50,
-        targetSemester: targetSemester || "All",
+        targetYear: targetYear || "All",
+        targetSemester: targetYear || "All",
         publishedBy: authorToUse,
         publishedAt: new Date().toISOString(),
         isPublished,
@@ -723,19 +729,19 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
     switch (diff) {
       case "Easy":
         return (
-          <Badge variant="outline" className="text-emerald-800 dark:text-emerald-300 border-emerald-500/40 bg-emerald-500/15 font-semibold text-[10px]">
+          <Badge variant="outline" className="text-[10px] font-medium">
             Easy
           </Badge>
         );
       case "Medium":
         return (
-          <Badge variant="outline" className="text-amber-800 dark:text-amber-300 border-amber-500/40 bg-amber-500/15 font-semibold text-[10px]">
+          <Badge variant="outline" className="text-[10px] font-medium">
             Medium
           </Badge>
         );
       case "Hard":
         return (
-          <Badge variant="outline" className="text-rose-800 dark:text-rose-300 border-rose-500/40 bg-rose-500/15 font-semibold text-[10px]">
+          <Badge variant="outline" className="text-[10px] font-medium">
             Hard
           </Badge>
         );
@@ -801,7 +807,7 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
         <CardContent className="pt-0">
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <div className="p-3 rounded-2xl glass border-white/25 dark:border-white/10 bg-white/40 dark:bg-card/40">
-              <span className="text-[11px] text-foreground/70 font-medium flex items-center gap-1">
+              <span className="text-[11px] text-muted-foreground font-medium flex items-center gap-1">
                 <FileCode size={12} className="text-primary" />
                 {isSuperAdmin ? "Total Challenges" : "Your Challenges"}
               </span>
@@ -810,29 +816,29 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
               </p>
             </div>
             <div className="p-3 rounded-2xl glass border-white/25 dark:border-white/10 bg-white/40 dark:bg-card/40">
-              <span className="text-[11px] text-emerald-800 dark:text-emerald-300 font-semibold flex items-center gap-1">
+              <span className="text-[11px] text-muted-foreground font-medium flex items-center gap-1">
                 <Eye size={12} />
                 Live (Visible)
               </span>
-              <p className="text-2xl font-bold font-heading mt-0.5 text-emerald-700 dark:text-emerald-300">
+              <p className="text-2xl font-bold font-heading mt-0.5 text-foreground">
                 {scopedProblems.filter((p) => p.isPublished).length}
               </p>
             </div>
             <div className="p-3 rounded-2xl glass border-white/25 dark:border-white/10 bg-white/40 dark:bg-card/40">
-              <span className="text-[11px] text-foreground/60 font-medium flex items-center gap-1">
+              <span className="text-[11px] text-muted-foreground font-medium flex items-center gap-1">
                 <EyeOff size={12} />
-                Drafts (Hidden)
+                Drafts
               </span>
-              <p className="text-2xl font-bold font-heading mt-0.5 text-foreground/70">
+              <p className="text-2xl font-bold font-heading mt-0.5 text-foreground">
                 {scopedProblems.filter((p) => !p.isPublished).length}
               </p>
             </div>
             <div className="p-3 rounded-2xl glass border-white/25 dark:border-white/10 bg-white/40 dark:bg-card/40">
-              <span className="text-[11px] text-primary font-semibold flex items-center gap-1">
+              <span className="text-[11px] text-muted-foreground font-medium flex items-center gap-1">
                 <Sparkles size={12} />
                 Points Pool
               </span>
-              <p className="text-2xl font-bold font-heading mt-0.5 text-primary">
+              <p className="text-2xl font-bold font-heading mt-0.5 text-foreground">
                 {scopedProblems.reduce((sum, p) => sum + p.points, 0)} pts
               </p>
             </div>
@@ -877,16 +883,16 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
             ))}
           </div>
 
-          {/* Semester Filter Dropdown */}
-          <Select value={semesterFilter} onValueChange={setSemesterFilter}>
+          {/* Academic Year Filter Dropdown */}
+          <Select value={yearFilter} onValueChange={setYearFilter}>
             <SelectTrigger className="h-8 text-xs w-[130px] rounded-xl bg-white/80 dark:bg-white/5 border-white/30 dark:border-white/10 text-foreground font-medium shadow-xs">
-              <SelectValue placeholder="All Semesters" />
+              <SelectValue placeholder="All Years" />
             </SelectTrigger>
             <SelectContent className="glass border-white/30 dark:border-white/10">
-              <SelectItem value="All">All Semesters</SelectItem>
-              {SEMESTER_PRESETS.filter((s) => s !== "All").map((sem) => (
-                <SelectItem key={sem} value={sem}>
-                  {sem}
+              <SelectItem value="All">All Years</SelectItem>
+              {COHORT_YEAR_PRESETS.filter((y) => y !== "All").map((yr) => (
+                <SelectItem key={yr} value={yr}>
+                  {yr}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -965,7 +971,7 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
             return (
               <div
                 key={prob.id}
-                className="p-4 rounded-2xl glass border-white/25 dark:border-white/10 hover:border-purple-400/40 hover:bg-white/40 dark:hover:bg-white/5 transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 group"
+                className="p-4 rounded-2xl glass border-white/25 dark:border-white/10 hover:border-border/60 hover:bg-white/40 dark:hover:bg-white/5 transition-all flex flex-col md:flex-row md:items-center justify-between gap-4 group"
               >
                 <div className="flex items-start sm:items-center gap-3.5 min-w-0">
                   <div className="mt-1 sm:mt-0">
@@ -992,17 +998,14 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
                         {prob.title}
                       </span>
                       {getDifficultyBadge(prob.difficulty)}
-                      <Badge
-                        variant="outline"
-                        className="text-[10px] py-0 px-2 rounded-md border-purple-500/40 text-purple-900 dark:text-purple-300 bg-purple-500/10 font-semibold"
-                      >
-                        <GraduationCap size={11} className="mr-1 inline text-purple-600 dark:text-purple-400" />
-                        {prob.targetSemester || "All Semesters"}
+                      <Badge variant="outline" className="text-[10px] py-0 px-2 rounded-md font-medium">
+                        <GraduationCap size={11} className="mr-1 inline" />
+                        {prob.targetYear || prob.targetSemester || "All Years"}
                       </Badge>
                       <span className="text-[11px] font-mono text-primary font-bold">
                         +{prob.points} pts
                       </span>
-                      <Badge variant="secondary" className="text-[10px] py-0 px-2 rounded-md font-medium text-foreground/80">
+                      <Badge variant="secondary" className="text-[10px] py-0 px-2 rounded-md font-medium">
                         {prob.category}
                       </Badge>
                     </div>
@@ -1011,24 +1014,18 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
                       {prob.description}
                     </p>
 
-                    <div className="flex items-center gap-2.5 text-[11px] text-foreground/60 mt-1.5 flex-wrap">
+                    <div className="flex items-center gap-2.5 text-[11px] text-muted-foreground mt-1.5 flex-wrap">
                       <span className="flex items-center gap-1 font-medium">
-                        <User size={11} className="text-primary" />
-                        <strong className="text-foreground/90 font-medium">{prob.publishedBy}</strong>
+                        <User size={11} />
+                        <span className="text-foreground/80 font-medium">{prob.publishedBy}</span>
                       </span>
                       <span>•</span>
                       <span>
-                        Tests: <strong className="text-foreground/90 font-medium">{prob.sampleTestCases?.length || 0} sample, {prob.hiddenTestCases?.length || 0} hidden</strong>
+                        Tests: <strong className="text-foreground/80 font-medium">{prob.sampleTestCases?.length || 0} sample, {prob.hiddenTestCases?.length || 0} hidden</strong>
                       </span>
                       <span>•</span>
-                      <span
-                        className={
-                          prob.isPublished
-                            ? "text-emerald-700 dark:text-emerald-300 font-semibold"
-                            : "text-amber-700 dark:text-amber-300 font-semibold"
-                        }
-                      >
-                        {prob.isPublished ? "● Live to Students" : "○ Draft (Hidden)"}
+                      <span className={prob.isPublished ? "font-medium text-foreground/80" : "text-muted-foreground"}>
+                        {prob.isPublished ? "● Live" : "○ Draft"}
                       </span>
                     </div>
                   </div>
@@ -1090,841 +1087,376 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
         )}
       </div>
 
-      {/* ══════════════════════════════════════════════════════════════════════ */}
-      {/* ── REDESIGNED HIGH-END MODAL DIALOG: 3 STRUCTURED SECTIONS ───────── */}
-      {/* ══════════════════════════════════════════════════════════════════════ */}
+      {/* ── Create / Edit Problem Dialog ── */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-3xl sm:max-w-4xl max-h-[92vh] flex flex-col p-0 overflow-hidden glass bg-card/95 backdrop-blur-2xl border border-white/30 dark:border-white/10 shadow-2xl rounded-2xl">
-          {/* Glowing top line */}
-          <div className="h-1 w-full bg-gradient-to-r from-primary via-purple-500 to-primary/40 shrink-0" />
+        <DialogContent className="max-w-3xl sm:max-w-4xl max-h-[92vh] flex flex-col p-0 overflow-hidden bg-card border border-border shadow-2xl rounded-2xl">
+          <div className="h-0.5 w-full bg-gradient-to-r from-primary to-primary/30 shrink-0" />
 
-          {/* Modal Header */}
-          <div className="p-5 pb-3 border-b border-white/20 dark:border-white/10 shrink-0">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 text-primary flex items-center justify-center shrink-0">
-                  <Code2 size={20} />
-                </div>
-                <div>
-                  <DialogTitle className="text-lg font-heading flex items-center gap-2">
-                    <span>{editingId ? "Edit Problem / Assignment" : "Create New Coding Challenge"}</span>
-                    <Badge
-                      variant="outline"
-                      className={`text-[10px] py-0 px-2 font-mono font-medium ${
-                        isPublished
-                          ? "border-emerald-500/40 text-emerald-800 dark:text-emerald-300 bg-emerald-500/15"
-                          : "border-amber-500/40 text-amber-800 dark:text-amber-300 bg-amber-500/15"
-                      }`}
-                    >
-                      {isPublished ? "Public Live" : "Private Draft"}
-                    </Badge>
-                  </DialogTitle>
-                  <DialogDescription className="text-xs text-muted-foreground mt-0.5">
-                    Define the problem specifications, automated judge test cases, and multi-language starter templates.
-                  </DialogDescription>
-                </div>
+          {/* Header */}
+          <div className="px-5 py-3 border-b border-border shrink-0 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-7 h-7 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
+                <Code2 size={14} />
               </div>
-
-              {/* Verified Author Badge (Locked for Faculty) */}
-              <div className="flex items-center gap-2.5 px-3 py-1.5 rounded-xl glass border border-white/30 dark:border-white/10 text-xs self-start sm:self-auto">
-                <ShieldCheck size={14} className="text-primary shrink-0" />
-                <div className="text-[11px] leading-tight">
-                  <span className="text-[10px] uppercase font-mono tracking-wider text-muted-foreground font-semibold block">
-                    Verified Author
-                  </span>
-                  <span className="font-semibold text-foreground">{isSuperAdmin ? publishedBy || currentAdminName : currentAdminName}</span>
-                </div>
+              <div>
+                <DialogTitle className="text-sm font-semibold text-foreground">
+                  {editingId ? "Edit Problem" : "New Problem"}
+                </DialogTitle>
+                <DialogDescription className="text-[10px] text-muted-foreground mt-0">
+                  Author: <span className="font-medium text-foreground">{isSuperAdmin ? publishedBy || currentAdminName : currentAdminName}</span>
+                </DialogDescription>
               </div>
             </div>
-
-            {/* Segmented Step Tabs Bar */}
-            <div className="flex items-center gap-2 mt-4 pt-1">
-              <button
-                type="button"
-                onClick={() => setActiveDialogTab("overview")}
-                className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-medium transition-all ${
-                  activeDialogTab === "overview"
-                    ? "bg-primary text-primary-foreground shadow-md shadow-primary/20 font-semibold"
-                    : "glass border border-white/20 dark:border-white/10 hover:bg-white/40 dark:hover:bg-white/10 text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                <Sliders size={13} />
-                <span>1. Overview & Settings</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveDialogTab("statement")}
-                className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-medium transition-all ${
-                  activeDialogTab === "statement"
-                    ? "bg-primary text-primary-foreground shadow-md shadow-primary/20 font-semibold"
-                    : "glass border border-white/20 dark:border-white/10 hover:bg-white/40 dark:hover:bg-white/10 text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                <BookOpen size={13} />
-                <span>2. Statement & Constraints</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setActiveDialogTab("code")}
-                className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 rounded-xl text-xs font-medium transition-all ${
-                  activeDialogTab === "code"
-                    ? "bg-primary text-primary-foreground shadow-md shadow-primary/20 font-semibold"
-                    : "glass border border-white/20 dark:border-white/10 hover:bg-white/40 dark:hover:bg-white/10 text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                <Code2 size={13} />
-                <span>3. Starter Code & Test Cases</span>
-              </button>
+            <div className="flex items-center gap-2 text-xs">
+              <span className="text-muted-foreground">Publish</span>
+              <Switch id="modal-live-switch" checked={isPublished} onCheckedChange={setIsPublished} />
+              <span className={isPublished ? "font-medium text-foreground" : "text-muted-foreground"}>
+                {isPublished ? "Live" : "Draft"}
+              </span>
             </div>
           </div>
 
-          {/* Modal Scrollable Body */}
-          <div className="flex-1 overflow-y-auto p-6 space-y-6">
-            {/* ───────────────────────────────────────────────────────────────── */}
-            {/* TAB 1: OVERVIEW & SETTINGS ─────────────────────────────────────── */}
-            {/* ───────────────────────────────────────────────────────────────── */}
-            {activeDialogTab === "overview" && (
-              <div className="space-y-5 animate-in fade-in-50 duration-200">
-                {/* ── DRAG & DROP OCR QUESTION EXTRACTOR ── */}
-                <div className="relative rounded-2xl p-4 bg-gradient-to-r from-primary/10 via-purple-500/10 to-primary/5 border border-white/40 dark:border-white/10 shadow-sm overflow-hidden">
-                  <input
-                    ref={ocrFileInputRef}
-                    type="file"
-                    accept="image/*"
-                    className="hidden"
-                    onChange={(e) => {
-                      const file = e.target.files?.[0];
-                      if (file) handleOcrFile(file);
-                      e.target.value = "";
-                    }}
-                  />
+          {/* Scrollable body — single form, no tabs */}
+          <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
 
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-xl bg-primary/20 text-primary flex items-center justify-center shrink-0">
-                        <Sparkles size={16} />
-                      </div>
-                      <div>
-                        <h4 className="text-xs font-semibold text-foreground flex items-center gap-2">
-                          AI & OCR Question Auto-Extractor
-                          <Badge variant="outline" className="text-[9px] py-0 px-2 bg-primary/15 text-primary border-primary/30 font-medium">
-                            Drag & Drop Ready
-                          </Badge>
-                        </h4>
-                        <p className="text-[11px] text-muted-foreground">
-                          Drop an assignment screenshot, problem photo, or exam question to auto-fill title, description, constraints & test cases.
-                        </p>
+            {/* OCR Drop Zone */}
+            <div>
+              <input
+                ref={ocrFileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleOcrFile(file);
+                  e.target.value = "";
+                }}
+              />
+              <div
+                onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+                onDragLeave={() => setDragOver(false)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  setDragOver(false);
+                  const file = e.dataTransfer.files?.[0];
+                  if (file) handleOcrFile(file);
+                }}
+                onClick={() => ocrFileInputRef.current?.click()}
+                className={`cursor-pointer rounded-xl border-2 border-dashed p-3 flex items-center gap-3 transition-all ${
+                  dragOver
+                    ? "border-primary bg-primary/5"
+                    : "border-border hover:border-primary/50 hover:bg-muted/20"
+                }`}
+              >
+                {ocrLoading ? (
+                  <div className="flex items-center gap-3 w-full">
+                    <RefreshCw size={15} className="animate-spin text-primary shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-medium text-foreground">{ocrStatus}</p>
+                      <div className="w-full h-1 bg-muted rounded-full overflow-hidden mt-1.5">
+                        <div className="h-full bg-primary transition-all duration-300" style={{ width: `${ocrProgress}%` }} />
                       </div>
                     </div>
-
+                    <span className="text-[10px] font-mono text-muted-foreground">{ocrProgress}%</span>
+                  </div>
+                ) : (
+                  <>
+                    <UploadCloud size={15} className="text-muted-foreground shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-xs font-medium text-foreground">
+                        Drop question screenshot → <span className="text-primary">auto-fill via OCR</span>
+                      </p>
+                      <p className="text-[10px] text-muted-foreground">PNG, JPG, JPEG — extracts title, description, constraints, year.</p>
+                    </div>
                     {ocrRawText && (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => setShowRawOcr(!showRawOcr)}
-                        className="h-7 px-2 text-[11px] text-primary hover:bg-primary/10 rounded-lg gap-1"
-                      >
-                        <FileText size={12} />
-                        <span>{showRawOcr ? "Hide Raw OCR" : "View Raw OCR"}</span>
-                      </Button>
-                    )}
-                  </div>
-
-                  <div
-                    onDragOver={(e) => {
-                      e.preventDefault();
-                      setDragOver(true);
-                    }}
-                    onDragLeave={() => setDragOver(false)}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      setDragOver(false);
-                      const file = e.dataTransfer.files?.[0];
-                      if (file) handleOcrFile(file);
-                    }}
-                    onClick={() => ocrFileInputRef.current?.click()}
-                    className={`group cursor-pointer rounded-xl border-2 border-dashed p-4 text-center transition-all ${
-                      dragOver
-                        ? "border-primary bg-primary/20 ring-2 ring-primary/30"
-                        : "border-primary/30 hover:border-primary/60 bg-white/50 dark:bg-white/5 hover:bg-white/70 dark:hover:bg-white/10"
-                    }`}
-                  >
-                    {ocrLoading ? (
-                      <div className="py-3 flex flex-col items-center justify-center gap-2">
-                        <RefreshCw size={22} className="animate-spin text-primary" />
-                        <span className="text-xs font-semibold text-foreground">{ocrStatus}</span>
-                        <div className="w-full max-w-xs h-2 bg-muted/60 rounded-full overflow-hidden border border-white/20">
-                          <div
-                            className="h-full bg-gradient-to-r from-primary to-purple-600 transition-all duration-300"
-                            style={{ width: `${ocrProgress}%` }}
-                          />
-                        </div>
-                        <span className="text-[10px] font-mono text-muted-foreground">{ocrProgress}% complete</span>
-                      </div>
-                    ) : (
-                      <div className="flex flex-col sm:flex-row items-center justify-center gap-3 py-1.5">
-                        <div className="w-10 h-10 rounded-xl bg-primary/15 text-primary flex items-center justify-center shrink-0 group-hover:scale-110 transition-transform">
-                          <UploadCloud size={20} />
-                        </div>
-                        <div className="text-center sm:text-left">
-                          <p className="text-xs font-semibold text-foreground">
-                            Drop question screenshot here, or <span className="text-primary underline font-bold">browse image</span>
-                          </p>
-                          <p className="text-[11px] text-muted-foreground mt-0.5">
-                            Supports PNG, JPG, JPEG, WebP. High accuracy engine parses problem statement, inputs, outputs, and semester.
-                          </p>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-
-                  {showRawOcr && ocrRawText && (
-                    <div className="mt-3 p-3 rounded-xl bg-card/90 border border-white/30 dark:border-white/10 space-y-1.5 animate-in fade-in-50">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-semibold text-foreground flex items-center gap-1">
-                          <FileText size={12} className="text-primary" /> Raw Extracted Text
-                        </span>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => {
-                            navigator.clipboard.writeText(ocrRawText);
-                            toast({ title: "Copied to clipboard" });
-                          }}
-                          className="h-6 px-2 text-[10px] rounded-md gap-1"
-                        >
-                          <Copy size={11} />
-                          <span>Copy</span>
-                        </Button>
-                      </div>
-                      <Textarea
-                        rows={4}
-                        value={ocrRawText}
-                        readOnly
-                        className="text-[11px] font-mono bg-background/50 border-white/20"
-                      />
-                    </div>
-                  )}
-                </div>
-
-                {/* Target Semester Selector for Specific Students */}
-                <div className="space-y-1.5 p-3.5 rounded-xl glass bg-white/40 dark:bg-white/5 border border-white/30 dark:border-white/10">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                      <GraduationCap size={14} className="text-primary" />
-                      Target Semester (Student Cohort Access)
-                    </Label>
-                    <Badge
-                      variant="outline"
-                      className="text-[10px] border-primary/30 text-primary bg-primary/10 font-mono font-medium"
-                    >
-                      {targetSemester === "All" ? "All Semesters Eligible" : `Visible to ${targetSemester} Students Only`}
-                    </Badge>
-                  </div>
-                  <p className="text-[11px] text-muted-foreground">
-                    Specify which semester students can see and attempt this challenge in their portal.
-                  </p>
-                  <div className="grid grid-cols-3 sm:grid-cols-9 gap-1.5 pt-1.5">
-                    {SEMESTER_PRESETS.map((sem) => (
                       <button
-                        key={sem}
                         type="button"
-                        onClick={() => setTargetSemester(sem)}
-                        className={`py-1.5 px-2 rounded-xl text-xs font-medium transition-all text-center ${
-                          targetSemester === sem
-                            ? "bg-primary text-primary-foreground shadow-sm font-semibold ring-1 ring-primary/40"
-                            : "glass border border-white/30 dark:border-white/10 hover:bg-white/60 dark:hover:bg-white/10 text-muted-foreground hover:text-foreground"
-                        }`}
+                        onClick={(e) => { e.stopPropagation(); setShowRawOcr(!showRawOcr); }}
+                        className="ml-auto text-[10px] text-primary hover:underline shrink-0"
                       >
-                        {sem}
+                        {showRawOcr ? "Hide raw" : "View raw"}
                       </button>
-                    ))}
-                  </div>
-                </div>
+                    )}
+                  </>
+                )}
+              </div>
+              {showRawOcr && ocrRawText && (
+                <Textarea rows={3} value={ocrRawText} readOnly
+                  className="mt-2 text-[11px] font-mono bg-muted/40 border-border rounded-xl" />
+              )}
+            </div>
 
-                {/* Title & Topic */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-semibold text-foreground flex items-center gap-1">
-                      Problem Title <span className="text-rose-500">*</span>
-                    </Label>
-                    <Input
-                      value={title}
-                      onChange={(e) => setTitle(e.target.value)}
-                      placeholder="e.g. Reverse a Linked List, Two Sum"
-                      className="h-9 text-xs rounded-xl bg-white/70 dark:bg-white/5 border border-white/30 dark:border-white/10 focus-visible:ring-primary/30"
-                    />
-                    <p className="text-[11px] text-muted-foreground">
-                      A clear, concise name that describes the core algorithmic objective.
-                    </p>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <Label className="text-xs font-semibold text-foreground">
-                      Category / Primary Topic
-                    </Label>
-                    <Input
-                      value={category}
-                      onChange={(e) => setCategory(e.target.value)}
-                      placeholder="e.g. Algorithms, Data Structures"
-                      className="h-9 text-xs rounded-xl bg-white/70 dark:bg-white/5 border border-white/30 dark:border-white/10 focus-visible:ring-primary/30"
-                    />
-                    {/* Quick Category Chips */}
-                    <div className="flex flex-wrap gap-1.5 pt-1">
-                      {CATEGORY_PRESETS.map((cat) => (
-                        <button
-                          key={cat}
-                          type="button"
-                          onClick={() => setCategory(cat)}
-                          className={`text-[10px] px-2 py-0.5 rounded-md transition-all ${
-                            category === cat
-                              ? "bg-primary/20 text-primary border border-primary/30 font-medium"
-                              : "glass border border-white/20 dark:border-white/10 text-muted-foreground hover:text-foreground hover:bg-white/60 dark:hover:bg-white/10"
-                          }`}
-                        >
-                          {cat}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Difficulty Selector (Interactive Card Pills) */}
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold text-foreground">
-                    Difficulty Level
-                  </Label>
-                  <div className="grid grid-cols-3 gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setDifficulty("Easy")}
-                      className={`p-3 rounded-xl border text-left transition-all ${
-                        difficulty === "Easy"
-                          ? "border-emerald-500/50 bg-emerald-500/15 ring-1 ring-emerald-500/30"
-                          : "border-white/30 dark:border-white/10 bg-white/40 dark:bg-white/5 hover:bg-white/60 dark:hover:bg-white/10"
+            {/* Title & Category */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs font-medium text-foreground">
+                  Title <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="e.g. Two Sum, Binary Search"
+                  className="h-8 text-xs rounded-xl bg-background border-border focus-visible:ring-primary/30"
+                />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs font-medium text-foreground">Category</Label>
+                <Input
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                  placeholder="e.g. Arrays, Dynamic Programming"
+                  className="h-8 text-xs rounded-xl bg-background border-border focus-visible:ring-primary/30"
+                />
+                <div className="flex flex-wrap gap-1 pt-0.5">
+                  {CATEGORY_PRESETS.map((cat) => (
+                    <button key={cat} type="button" onClick={() => setCategory(cat)}
+                      className={`text-[10px] px-1.5 py-0.5 rounded border transition-all ${
+                        category === cat
+                          ? "border-primary/60 bg-primary/10 text-primary font-medium"
+                          : "border-border text-muted-foreground hover:text-foreground hover:border-foreground/30"
                       }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="font-semibold text-xs text-emerald-800 dark:text-emerald-300">🟢 Easy</span>
-                        {difficulty === "Easy" && <Check size={14} className="text-emerald-700 dark:text-emerald-300" />}
-                      </div>
-                      <p className="text-[10px] text-muted-foreground mt-1">
-                        Foundational logic, arrays & simple loops.
-                      </p>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setDifficulty("Medium")}
-                      className={`p-3 rounded-xl border text-left transition-all ${
-                        difficulty === "Medium"
-                          ? "border-amber-500/50 bg-amber-500/15 ring-1 ring-amber-500/30"
-                          : "border-white/30 dark:border-white/10 bg-white/40 dark:bg-white/5 hover:bg-white/60 dark:hover:bg-white/10"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="font-semibold text-xs text-amber-800 dark:text-amber-300">🟡 Medium</span>
-                        {difficulty === "Medium" && <Check size={14} className="text-amber-700 dark:text-amber-300" />}
-                      </div>
-                      <p className="text-[10px] text-muted-foreground mt-1">
-                        Requires optimization, hashing, recursion.
-                      </p>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setDifficulty("Hard")}
-                      className={`p-3 rounded-xl border text-left transition-all ${
-                        difficulty === "Hard"
-                          ? "border-rose-500/50 bg-rose-500/15 ring-1 ring-rose-500/30"
-                          : "border-white/30 dark:border-white/10 bg-white/40 dark:bg-white/5 hover:bg-white/60 dark:hover:bg-white/10"
-                      }`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <span className="font-semibold text-xs text-rose-800 dark:text-rose-300">🔴 Hard</span>
-                        {difficulty === "Hard" && <Check size={14} className="text-rose-700 dark:text-rose-300" />}
-                      </div>
-                      <p className="text-[10px] text-muted-foreground mt-1">
-                        Complex DP, graphs, strict time/space limits.
-                      </p>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Points Awarded & Publication Visibility */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
-                  {/* Points */}
-                  <div className="space-y-1.5 p-3.5 rounded-xl bg-white/40 dark:bg-white/5 border border-white/30 dark:border-white/10">
-                    <div className="flex items-center justify-between">
-                      <Label className="text-xs font-semibold text-foreground">
-                        Points Awarded on Solve
-                      </Label>
-                      <span className="text-xs font-mono font-bold text-primary">
-                        +{points} pts
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2 pt-1">
-                      {POINTS_PRESETS.map((pts) => (
-                        <button
-                          key={pts}
-                          type="button"
-                          onClick={() => setPoints(pts)}
-                          className={`flex-1 py-1 text-xs rounded-lg transition-all font-mono ${
-                            points === pts
-                              ? "bg-primary text-primary-foreground font-bold"
-                              : "glass border border-white/20 dark:border-white/10 text-muted-foreground hover:bg-white/60 dark:hover:bg-white/10 hover:text-foreground"
-                          }`}
-                        >
-                          {pts}
-                        </button>
-                      ))}
-                    </div>
-                    <div className="pt-2">
-                      <Input
-                        type="number"
-                        value={points}
-                        onChange={(e) => setPoints(Number(e.target.value))}
-                        className="h-8 text-xs font-mono rounded-lg bg-white/70 dark:bg-white/5 border border-white/30 dark:border-white/10"
-                        placeholder="Custom points value..."
-                      />
-                    </div>
-                  </div>
-
-                  {/* Public Live Switch */}
-                  <div className="space-y-2 p-3.5 rounded-xl bg-white/40 dark:bg-white/5 border border-white/30 dark:border-white/10 flex flex-col justify-between">
-                    <div>
-                      <div className="flex items-center justify-between">
-                        <Label className="text-xs font-semibold text-foreground">
-                          Publication Visibility
-                        </Label>
-                        <Badge
-                          variant="outline"
-                          className={
-                            isPublished
-                              ? "text-emerald-800 dark:text-emerald-300 border-emerald-500/40 bg-emerald-500/15 text-[10px] font-medium"
-                              : "text-amber-800 dark:text-amber-300 border-amber-500/40 bg-amber-500/15 text-[10px] font-medium"
-                          }
-                        >
-                          {isPublished ? "Live Public" : "Private Draft"}
-                        </Badge>
-                      </div>
-                      <p className="text-[11px] text-muted-foreground mt-1">
-                        {isPublished
-                          ? "This challenge will be visible to students in the designated semester."
-                          : "Saved as draft. Only you can view, edit, or test this question."}
-                      </p>
-                    </div>
-
-                    <div className="flex items-center justify-between pt-2 border-t border-white/20 dark:border-white/10">
-                      <span className="text-xs text-foreground font-medium">
-                        Publish to Student Coding Hub
-                      </span>
-                      <Switch
-                        id="modal-live-switch"
-                        checked={isPublished}
-                        onCheckedChange={setIsPublished}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Author Card: Strictly locked for Faculty */}
-                <div className="p-3.5 rounded-xl bg-white/40 dark:bg-white/5 border border-white/30 dark:border-white/10 flex items-center justify-between gap-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center shrink-0">
-                      <ShieldCheck size={16} />
-                    </div>
-                    <div>
-                      <span className="text-[11px] uppercase font-mono tracking-wider text-muted-foreground font-semibold block">
-                        Faculty Publisher
-                      </span>
-                      {isSuperAdmin ? (
-                        <Input
-                          value={publishedBy}
-                          onChange={(e) => setPublishedBy(e.target.value)}
-                          placeholder="Faculty Member Name"
-                          className="h-7 text-xs mt-1 w-56 font-medium bg-white/70 dark:bg-white/5 border border-white/30 dark:border-white/10"
-                        />
-                      ) : (
-                        <p className="text-xs font-semibold text-foreground">
-                          {currentAdminName}{" "}
-                          <span className="text-[10px] text-muted-foreground font-normal">
-                            (Locked to your verified session)
-                          </span>
-                        </p>
-                      )}
-                    </div>
-                  </div>
-
-                  {!isSuperAdmin && (
-                    <Badge variant="outline" className="text-[10px] text-primary border-primary/30">
-                      Protected Author
-                    </Badge>
-                  )}
+                    >{cat}</button>
+                  ))}
                 </div>
               </div>
-            )}
+            </div>
 
-            {/* ───────────────────────────────────────────────────────────────── */}
-            {/* TAB 2: STATEMENT & CONSTRAINTS ─────────────────────────────────── */}
-            {/* ───────────────────────────────────────────────────────────────── */}
-            {activeDialogTab === "statement" && (
-              <div className="space-y-5 animate-in fade-in-50 duration-200">
-                {/* Problem Description */}
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                      <BookOpen size={13} className="text-primary" />
-                      Problem Statement & Specifications <span className="text-rose-500">*</span>
-                    </Label>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={insertStandardDescriptionTemplate}
-                      className="h-7 px-2 text-[11px] text-primary hover:text-primary hover:bg-primary/10 rounded-lg gap-1"
-                    >
-                      <Sparkles size={11} />
-                      <span>Insert Formatted Template</span>
-                    </Button>
-                  </div>
-                  <Textarea
-                    rows={8}
-                    value={description}
-                    onChange={(e) => setDescription(e.target.value)}
-                    placeholder="Describe the task, input formats, expected outputs, and mathematical rules..."
-                    className="text-xs font-sans leading-relaxed rounded-xl bg-white/70 dark:bg-white/5 border border-white/30 dark:border-white/10 focus-visible:ring-primary/30 p-3"
-                  />
-                  <p className="text-[11px] text-muted-foreground">
-                    Supports Markdown formatting (headings, code blocks, bold, lists).
-                  </p>
+            {/* Difficulty · Points · Target Year */}
+            <div className="grid grid-cols-3 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs font-medium text-foreground">Difficulty</Label>
+                <div className="flex gap-1">
+                  {(["Easy", "Medium", "Hard"] as ProblemDifficulty[]).map((d) => (
+                    <button key={d} type="button" onClick={() => setDifficulty(d)}
+                      className={`flex-1 py-1.5 text-[11px] rounded-lg border font-medium transition-all ${
+                        difficulty === d
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-border text-muted-foreground hover:text-foreground hover:border-foreground/40"
+                      }`}
+                    >{d}</button>
+                  ))}
                 </div>
+              </div>
 
-                {/* Constraints */}
-                <div className="space-y-1.5">
-                  <Label className="text-xs font-semibold text-foreground flex items-center justify-between">
-                    <span className="flex items-center gap-1.5">
-                      <Lock size={13} className="text-amber-500" />
-                      Runtime & Value Constraints (One per line)
-                    </span>
-                    <span className="text-[10px] font-mono text-muted-foreground">
-                      {constraintsText.split("\n").filter(Boolean).length} constraints
-                    </span>
-                  </Label>
-                  <Textarea
-                    rows={3}
-                    value={constraintsText}
-                    onChange={(e) => setConstraintsText(e.target.value)}
-                    placeholder={"1 <= nums.length <= 10^4\n-10^9 <= nums[i] <= 10^9\nTime Limit: 2.0s"}
-                    className="text-xs font-mono rounded-xl bg-white/70 dark:bg-white/5 border border-white/30 dark:border-white/10 focus-visible:ring-primary/30 p-3"
-                  />
-                  {/* Constraints pills preview */}
-                  {constraintsText.trim() && (
-                    <div className="flex flex-wrap gap-1.5 pt-1">
-                      {constraintsText
-                        .split("\n")
-                        .map((s) => s.trim())
-                        .filter(Boolean)
-                        .map((c, i) => (
-                          <span
-                            key={i}
-                            className="px-2 py-0.5 rounded-md glass bg-white/40 dark:bg-white/5 text-foreground font-mono text-[10px] border border-white/30 dark:border-white/10"
-                          >
-                            {c}
-                          </span>
-                        ))}
-                    </div>
-                  )}
+              <div className="space-y-1">
+                <Label className="text-xs font-medium text-foreground">Points</Label>
+                <div className="flex gap-1 items-center">
+                  {POINTS_PRESETS.map((pts) => (
+                    <button key={pts} type="button" onClick={() => setPoints(pts)}
+                      className={`flex-1 py-1.5 text-[11px] rounded-lg border font-mono font-medium transition-all ${
+                        points === pts
+                          ? "border-primary bg-primary/10 text-primary"
+                          : "border-border text-muted-foreground hover:text-foreground hover:border-foreground/40"
+                      }`}
+                    >{pts}</button>
+                  ))}
+                  <Input type="number" value={points} onChange={(e) => setPoints(Number(e.target.value))}
+                    className="flex-1 h-[30px] text-[11px] font-mono rounded-lg border-border bg-background" placeholder="pts" />
                 </div>
+              </div>
 
-                {/* Tags */}
-                <div className="space-y-1.5 pt-1">
-                  <Label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                    <Tag size={13} className="text-primary" />
-                    Topic Tags (Comma-separated)
-                  </Label>
-                  <Input
-                    value={tagsText}
-                    onChange={(e) => setTagsText(e.target.value)}
-                    placeholder="e.g. Array, Two Pointers, Hash Table"
-                    className="h-9 text-xs rounded-xl bg-white/70 dark:bg-white/5 border border-white/30 dark:border-white/10 focus-visible:ring-primary/30"
-                  />
-                  <div className="flex flex-wrap gap-1.5 pt-1">
-                    {TAG_PRESETS.map((tag) => (
-                      <button
-                        key={tag}
-                        type="button"
-                        onClick={() => {
-                          const currentTags = tagsText
-                            .split(",")
-                            .map((t) => t.trim())
-                            .filter(Boolean);
-                          if (!currentTags.includes(tag)) {
-                            setTagsText([...currentTags, tag].join(", "));
-                          }
-                        }}
-                        className="text-[10px] px-2 py-0.5 rounded-md glass border border-white/20 dark:border-white/10 hover:bg-white/60 dark:hover:bg-white/10 text-muted-foreground hover:text-foreground transition-all"
-                      >
-                        +{tag}
-                      </button>
+              <div className="space-y-1">
+                <Label className="text-xs font-medium text-foreground">Target Year</Label>
+                <Select value={targetYear} onValueChange={(v) => setTargetYear(v as TargetYear)}>
+                  <SelectTrigger className="h-8 text-xs rounded-xl border-border bg-background">
+                    <SelectValue placeholder="All Years" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {COHORT_YEAR_PRESETS.map((yr) => (
+                      <SelectItem key={yr} value={yr}>{yr === "All" ? "All Years" : yr}</SelectItem>
                     ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Problem Statement */}
+            <div className="space-y-1">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-medium text-foreground">
+                  Problem Statement <span className="text-destructive">*</span>
+                </Label>
+                <button type="button" onClick={insertStandardDescriptionTemplate}
+                  className="text-[10px] text-primary hover:underline flex items-center gap-0.5">
+                  <Sparkles size={10} /> Insert template
+                </button>
+              </div>
+              <Textarea
+                rows={6}
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="Describe the problem, input/output format, and examples..."
+                className="text-xs rounded-xl bg-background border-border focus-visible:ring-primary/30 p-3 resize-y"
+              />
+            </div>
+
+            {/* Constraints & Tags */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label className="text-xs font-medium text-foreground">
+                  Constraints <span className="text-muted-foreground font-normal">(one per line)</span>
+                </Label>
+                <Textarea rows={3} value={constraintsText} onChange={(e) => setConstraintsText(e.target.value)}
+                  placeholder={"1 <= nums.length <= 10^4\n-10^9 <= nums[i] <= 10^9"}
+                  className="text-xs font-mono rounded-xl bg-background border-border focus-visible:ring-primary/30 p-3" />
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs font-medium text-foreground">
+                  Tags <span className="text-muted-foreground font-normal">(comma-separated)</span>
+                </Label>
+                <Input value={tagsText} onChange={(e) => setTagsText(e.target.value)}
+                  placeholder="Array, Two Pointers, Hash Table"
+                  className="h-8 text-xs rounded-xl bg-background border-border focus-visible:ring-primary/30" />
+                <div className="flex flex-wrap gap-1 pt-0.5">
+                  {TAG_PRESETS.map((tag) => (
+                    <button key={tag} type="button"
+                      onClick={() => {
+                        const cur = tagsText.split(",").map((t) => t.trim()).filter(Boolean);
+                        if (!cur.includes(tag)) setTagsText([...cur, tag].join(", "));
+                      }}
+                      className="text-[10px] px-1.5 py-0.5 rounded border border-border text-muted-foreground hover:text-foreground hover:border-foreground/30 transition-all">
+                      +{tag}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Starter Code */}
+            <div className="rounded-xl border border-border bg-muted/20 overflow-hidden">
+              <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-muted/40">
+                <Label className="text-xs font-medium text-foreground flex items-center gap-1.5">
+                  <Code2 size={12} className="text-muted-foreground" /> Starter Code
+                </Label>
+                <div className="flex items-center rounded-lg border border-border p-0.5 gap-0.5 bg-background">
+                  {(["python", "javascript", "cpp"] as const).map((lang) => (
+                    <button key={lang} type="button" onClick={() => setActiveCodeLang(lang)}
+                      className={`px-2.5 py-0.5 rounded-md text-[11px] transition-all ${
+                        activeCodeLang === lang
+                          ? "bg-primary text-primary-foreground font-semibold"
+                          : "text-muted-foreground hover:text-foreground"
+                      }`}>
+                      {lang === "python" ? "Python" : lang === "javascript" ? "JS" : "C++"}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="px-1 pt-0 pb-1 flex items-center justify-between bg-muted/30 border-b border-border/60">
+                <span className="text-[10px] font-mono text-muted-foreground px-2">
+                  {activeCodeLang === "python" && "main.py"}
+                  {activeCodeLang === "javascript" && "solution.js"}
+                  {activeCodeLang === "cpp" && "solution.cpp"}
+                </span>
+                <button type="button"
+                  onClick={() => {
+                    const d = getDefaultStarterCode();
+                    if (activeCodeLang === "python") setPythonCode(d.python);
+                    if (activeCodeLang === "javascript") setJavascriptCode(d.javascript);
+                    if (activeCodeLang === "cpp") setCppCode(d.cpp);
+                  }}
+                  className="text-[10px] text-muted-foreground hover:text-foreground px-2 py-1 hover:underline">
+                  Reset to default
+                </button>
+              </div>
+              <div className="p-3">
+                {activeCodeLang === "python" && (
+                  <Textarea rows={6} value={pythonCode} onChange={(e) => setPythonCode(e.target.value)}
+                    className="text-xs font-mono bg-transparent border-0 focus-visible:ring-0 p-0 resize-y" placeholder="def solve(): ..." />
+                )}
+                {activeCodeLang === "javascript" && (
+                  <Textarea rows={6} value={javascriptCode} onChange={(e) => setJavascriptCode(e.target.value)}
+                    className="text-xs font-mono bg-transparent border-0 focus-visible:ring-0 p-0 resize-y" placeholder="function solve() { ... }" />
+                )}
+                {activeCodeLang === "cpp" && (
+                  <Textarea rows={6} value={cppCode} onChange={(e) => setCppCode(e.target.value)}
+                    className="text-xs font-mono bg-transparent border-0 focus-visible:ring-0 p-0 resize-y" placeholder="int main() { ... }" />
+                )}
+              </div>
+            </div>
+
+            {/* Test Cases */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {/* Sample */}
+              <div className="rounded-xl border border-border bg-muted/20 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-medium text-foreground flex items-center gap-1.5">
+                    <Eye size={12} className="text-muted-foreground" /> Sample Test Case
+                  </Label>
+                  <span className="text-[10px] text-muted-foreground">Shown to students</span>
+                </div>
+                <div className="space-y-1.5">
+                  <div>
+                    <p className="text-[10px] font-mono text-muted-foreground mb-0.5">Input (stdin)</p>
+                    <Textarea rows={2} value={sampleInput} onChange={(e) => setSampleInput(e.target.value)}
+                      placeholder={"4 9\n2 7 11 15"}
+                      className="text-xs font-mono rounded-lg bg-background border-border" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-mono text-muted-foreground mb-0.5">Expected Output</p>
+                    <Textarea rows={2} value={sampleOutput} onChange={(e) => setSampleOutput(e.target.value)}
+                      placeholder="0 1"
+                      className="text-xs font-mono rounded-lg bg-background border-border" />
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-muted-foreground mb-0.5">Explanation (optional)</p>
+                    <Input value={sampleExplanation} onChange={(e) => setSampleExplanation(e.target.value)}
+                      placeholder="nums[0]+nums[1]==9, return 0 1"
+                      className="h-7 text-xs rounded-lg bg-background border-border" />
                   </div>
                 </div>
               </div>
-            )}
 
-            {/* ───────────────────────────────────────────────────────────────── */}
-            {/* TAB 3: STARTER CODE & TEST CASES ──────────────────────────────── */}
-            {/* ───────────────────────────────────────────────────────────────── */}
-            {activeDialogTab === "code" && (
-              <div className="space-y-6 animate-in fade-in-50 duration-200">
-                {/* Multi-language Starter Code Templates */}
-                <div className="space-y-2">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                    <Label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
-                      <Code2 size={14} className="text-primary" />
-                      Starter Code Templates for Students
-                    </Label>
-                    {/* Language selector chips */}
-                    <div className="flex items-center gap-1 rounded-xl glass p-1 border border-white/30 dark:border-white/10 text-xs">
-                      <button
-                        type="button"
-                        onClick={() => setActiveCodeLang("python")}
-                        className={`px-3 py-1 rounded-lg text-xs transition-all ${
-                          activeCodeLang === "python"
-                            ? "bg-primary text-primary-foreground font-semibold shadow-xs"
-                            : "text-muted-foreground hover:text-foreground"
-                        }`}
-                      >
-                        Python 3
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setActiveCodeLang("javascript")}
-                        className={`px-3 py-1 rounded-lg text-xs transition-all ${
-                          activeCodeLang === "javascript"
-                            ? "bg-primary text-primary-foreground font-semibold shadow-xs"
-                            : "text-muted-foreground hover:text-foreground"
-                        }`}
-                      >
-                        JavaScript
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setActiveCodeLang("cpp")}
-                        className={`px-3 py-1 rounded-lg text-xs transition-all ${
-                          activeCodeLang === "cpp"
-                            ? "bg-primary text-primary-foreground font-semibold shadow-xs"
-                            : "text-muted-foreground hover:text-foreground"
-                        }`}
-                      >
-                        C++ 17
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Dark code editor box */}
-                  <div className="rounded-xl border border-white/20 dark:border-white/10 bg-zinc-950 p-3 shadow-inner space-y-2">
-                    <div className="flex items-center justify-between text-[11px] text-zinc-400 pb-1 border-b border-zinc-800">
-                      <span className="font-mono">
-                        {activeCodeLang === "python" && "main.py"}
-                        {activeCodeLang === "javascript" && "solution.js"}
-                        {activeCodeLang === "cpp" && "solution.cpp"}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const defaults = getDefaultStarterCode();
-                          if (activeCodeLang === "python") setPythonCode(defaults.python);
-                          if (activeCodeLang === "javascript") setJavascriptCode(defaults.javascript);
-                          if (activeCodeLang === "cpp") setCppCode(defaults.cpp);
-                        }}
-                        className="text-[10px] text-zinc-400 hover:text-zinc-200 hover:underline"
-                      >
-                        Reset to default starter
-                      </button>
-                    </div>
-
-                    {activeCodeLang === "python" && (
-                      <Textarea
-                        rows={7}
-                        value={pythonCode}
-                        onChange={(e) => setPythonCode(e.target.value)}
-                        className="text-xs font-mono bg-transparent text-emerald-300 border-0 focus-visible:ring-0 p-0 resize-y"
-                        placeholder="def solve(): ..."
-                      />
-                    )}
-
-                    {activeCodeLang === "javascript" && (
-                      <Textarea
-                        rows={7}
-                        value={javascriptCode}
-                        onChange={(e) => setJavascriptCode(e.target.value)}
-                        className="text-xs font-mono bg-transparent text-amber-300 border-0 focus-visible:ring-0 p-0 resize-y"
-                        placeholder="function solve() { ... }"
-                      />
-                    )}
-
-                    {activeCodeLang === "cpp" && (
-                      <Textarea
-                        rows={7}
-                        value={cppCode}
-                        onChange={(e) => setCppCode(e.target.value)}
-                        className="text-xs font-mono bg-transparent text-sky-300 border-0 focus-visible:ring-0 p-0 resize-y"
-                        placeholder="int main() { ... }"
-                      />
-                    )}
-                  </div>
+              {/* Hidden */}
+              <div className="rounded-xl border border-border bg-muted/20 p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label className="text-xs font-medium text-foreground flex items-center gap-1.5">
+                    <Lock size={12} className="text-muted-foreground" /> Hidden Test Case
+                  </Label>
+                  <span className="text-[10px] text-muted-foreground">Judge only — private</span>
                 </div>
-
-                {/* ── Sample Test Case (Public to Students) ── */}
-                <div className="p-4 rounded-xl bg-emerald-500/5 border border-emerald-500/30 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-xs font-semibold text-emerald-800 dark:text-emerald-300 flex items-center gap-1.5">
-                      <CheckCircle2 size={14} />
-                      Sample Test Case (Public to Students)
-                    </Label>
-                    <Badge variant="outline" className="text-[10px] border-emerald-500/40 text-emerald-800 dark:text-emerald-300 bg-emerald-500/15 font-medium">
-                      Visible in problem description
-                    </Badge>
+                <div className="space-y-1.5">
+                  <div>
+                    <p className="text-[10px] font-mono text-muted-foreground mb-0.5">Input (stdin)</p>
+                    <Textarea rows={2} value={hiddenInput} onChange={(e) => setHiddenInput(e.target.value)}
+                      placeholder={"3 6\n3 2 4"}
+                      className="text-xs font-mono rounded-lg bg-background border-border" />
                   </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <span className="text-[11px] text-muted-foreground font-mono">Standard Input (stdin):</span>
-                      <Textarea
-                        rows={3}
-                        value={sampleInput}
-                        onChange={(e) => setSampleInput(e.target.value)}
-                        placeholder={"4 9\n2 7 11 15"}
-                        className="text-xs font-mono rounded-lg bg-white/70 dark:bg-white/5 border border-white/30 dark:border-white/10"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <span className="text-[11px] text-muted-foreground font-mono">Expected Output (stdout):</span>
-                      <Textarea
-                        rows={3}
-                        value={sampleOutput}
-                        onChange={(e) => setSampleOutput(e.target.value)}
-                        placeholder="0 1"
-                        className="text-xs font-mono rounded-lg bg-white/70 dark:bg-white/5 border border-white/30 dark:border-white/10"
-                      />
-                    </div>
+                  <div>
+                    <p className="text-[10px] font-mono text-muted-foreground mb-0.5">Expected Output</p>
+                    <Textarea rows={2} value={hiddenOutput} onChange={(e) => setHiddenOutput(e.target.value)}
+                      placeholder="1 2"
+                      className="text-xs font-mono rounded-lg bg-background border-border" />
                   </div>
-
-                  <div className="space-y-1">
-                    <span className="text-[11px] text-muted-foreground">Explanation (Optional for students):</span>
-                    <Input
-                      value={sampleExplanation}
-                      onChange={(e) => setSampleExplanation(e.target.value)}
-                      placeholder="Because nums[0] + nums[1] == 9, we return 0 1."
-                      className="h-8 text-xs rounded-lg bg-white/70 dark:bg-white/5 border border-white/30 dark:border-white/10"
-                    />
-                  </div>
-                </div>
-
-                {/* ── Hidden Evaluation Test Case (Private for Scoring) ── */}
-                <div className="p-4 rounded-xl bg-amber-500/5 border border-amber-500/30 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <Label className="text-xs font-semibold text-amber-800 dark:text-amber-300 flex items-center gap-1.5">
-                      <Lock size={14} />
-                      Hidden Evaluation Test Case (For Automated Grading)
-                    </Label>
-                    <Badge variant="outline" className="text-[10px] border-amber-500/40 text-amber-800 dark:text-amber-300 bg-amber-500/15 font-medium">
-                      Private Judge Test Case
-                    </Badge>
-                  </div>
-
-                  <p className="text-[11px] text-muted-foreground">
-                    Students cannot see this test case. It is evaluated by the judge runner when students click "Submit Solution".
+                  <p className="text-[10px] text-muted-foreground pt-1">
+                    Students see pass/fail only — the input and expected output stay hidden.
                   </p>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <span className="text-[11px] text-muted-foreground font-mono">Hidden Input (stdin):</span>
-                      <Textarea
-                        rows={3}
-                        value={hiddenInput}
-                        onChange={(e) => setHiddenInput(e.target.value)}
-                        placeholder={"3 6\n3 2 4"}
-                        className="text-xs font-mono rounded-lg bg-white/70 dark:bg-white/5 border border-white/30 dark:border-white/10"
-                      />
-                    </div>
-                    <div className="space-y-1">
-                      <span className="text-[11px] text-muted-foreground font-mono">Hidden Expected Output (stdout):</span>
-                      <Textarea
-                        rows={3}
-                        value={hiddenOutput}
-                        onChange={(e) => setHiddenOutput(e.target.value)}
-                        placeholder="1 2"
-                        className="text-xs font-mono rounded-lg bg-white/70 dark:bg-white/5 border border-white/30 dark:border-white/10"
-                      />
-                    </div>
-                  </div>
                 </div>
+              </div>
+            </div>
+
+            {/* SuperAdmin author override */}
+            {isSuperAdmin && (
+              <div className="flex items-center gap-3 rounded-xl border border-border p-3 bg-muted/20">
+                <ShieldCheck size={13} className="text-muted-foreground shrink-0" />
+                <span className="text-[11px] text-muted-foreground font-medium shrink-0">Author override:</span>
+                <Input value={publishedBy} onChange={(e) => setPublishedBy(e.target.value)}
+                  placeholder="Faculty member name"
+                  className="h-7 text-xs rounded-lg border-border bg-background flex-1" />
               </div>
             )}
           </div>
 
-          {/* Modal Footer Controls */}
-          <DialogFooter className="p-4 border-t border-white/20 dark:border-white/10 glass bg-card/90 shrink-0 flex flex-row items-center justify-between">
-            <div className="flex items-center gap-2">
-              {activeDialogTab !== "overview" && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    if (activeDialogTab === "code") setActiveDialogTab("statement");
-                    else if (activeDialogTab === "statement") setActiveDialogTab("overview");
-                  }}
-                  className="text-xs rounded-xl gap-1 glass border-white/30 dark:border-white/10"
-                >
-                  <ArrowLeft size={13} />
-                  <span>Back</span>
-                </Button>
-              )}
-
-              {activeDialogTab !== "code" && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    if (activeDialogTab === "overview") setActiveDialogTab("statement");
-                    else if (activeDialogTab === "statement") setActiveDialogTab("code");
-                  }}
-                  className="text-xs rounded-xl gap-1 glass border-white/30 dark:border-white/10"
-                >
-                  <span>Next</span>
-                  <ArrowRight size={13} />
-                </Button>
-              )}
-            </div>
-
-            <div className="flex items-center gap-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setDialogOpen(false)}
-                className="text-xs rounded-xl"
-              >
-                Cancel
-              </Button>
-              <Button
-                size="sm"
-                onClick={handleSaveProblem}
-                className="text-xs rounded-xl gap-1.5 shadow-md shadow-primary/20 bg-gradient-to-r from-primary to-purple-600 hover:from-primary/90 hover:to-purple-700 text-white font-medium"
-              >
-                <Check size={14} />
-                <span>{editingId ? "Update Challenge" : "Publish Challenge"}</span>
-              </Button>
-            </div>
-          </DialogFooter>
+          {/* Footer */}
+          <div className="px-5 py-3 border-t border-border shrink-0 flex items-center justify-end gap-2">
+            <Button variant="ghost" size="sm" onClick={() => setDialogOpen(false)} className="text-xs rounded-xl">
+              Cancel
+            </Button>
+            <Button size="sm" onClick={handleSaveProblem}
+              className="text-xs rounded-xl gap-1.5 bg-primary hover:bg-primary/90 text-primary-foreground font-medium">
+              <Check size={13} />
+              {editingId ? "Update Problem" : "Create Problem"}
+            </Button>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

@@ -2,6 +2,7 @@ import { createLocalStore } from "../localStore";
 
 export interface Resource {
   id: string;
+  created_at: string;
   title: string;
   description: string;
   url: string;

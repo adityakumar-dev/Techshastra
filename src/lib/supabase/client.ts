@@ -59,7 +59,7 @@ const computeSupabaseUrl = (): string => {
 const safeUrl = computeSupabaseUrl();
 const safeKey = supabaseAnonKey || 'placeholder-anon-key';
 
-export const supabase = createClient<Database>(safeUrl, safeKey, {
+export const supabase: any = createClient<any>(safeUrl, safeKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,

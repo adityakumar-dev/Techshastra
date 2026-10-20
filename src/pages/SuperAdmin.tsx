@@ -13,6 +13,7 @@ import {
   blockAdmin,
   unblockAdmin,
   deleteAdminCredential,
+  createAdminCredential,
 } from "@/lib/adminStore";
 import {
   getPendingAdminLoginRequestsDB,
@@ -503,7 +504,7 @@ export default function SuperAdmin() {
                 <Input
                   value={setupName}
                   onChange={(e) => setSetupName(e.target.value)}
-                  placeholder="e.g. Yash Choudhary"
+                  placeholder="e.g. Master Admin"
                   required
                   autoFocus
                 />

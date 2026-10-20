@@ -43,11 +43,11 @@ export const StudentAuthProvider = ({ children }: { children: ReactNode }) => {
         // If sGh is empty, direct fallback check on student_profiles table
         if (!sGh) {
           try {
-            const { data: sp } = await supabase
-              .from('student_profiles')
+            const { data: sp }: any = await (supabase
+              .from('student_profiles' as any)
               .select('github_username, username')
               .eq('user_id', remote.user.id)
-              .maybeSingle();
+              .maybeSingle() as any);
             if (sp) sGh = sp.github_username || sp.username || "";
           } catch (_e) {}
         }
@@ -100,11 +100,11 @@ export const StudentAuthProvider = ({ children }: { children: ReactNode }) => {
             
             if (!sGh) {
               try {
-                const { data: sp } = await supabase
-                  .from('student_profiles')
+                const { data: sp }: any = await (supabase
+                  .from('student_profiles' as any)
                   .select('github_username, username')
                   .eq('user_id', authSession.user.id)
-                  .maybeSingle();
+                  .maybeSingle() as any);
                 if (sp) sGh = sp.github_username || sp.username || '';
               } catch (_e) {}
             }

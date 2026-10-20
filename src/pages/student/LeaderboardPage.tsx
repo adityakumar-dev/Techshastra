@@ -131,49 +131,52 @@ export const LeaderboardPage: React.FC = () => {
       </div>
 
       {/* Dual Section Switcher */}
-      <div className="flex flex-wrap items-center gap-2 p-1.5 glass rounded-2xl w-fit">
-        <button
-          onClick={() => setActiveTab("typing")}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs transition-all ${
-            activeTab === "typing"
-              ? "bg-primary text-primary-foreground font-semibold shadow-xs"
-              : "text-foreground/60 hover:text-foreground hover:bg-foreground/5"
-          }`}
-        >
-          <Keyboard size={14} className={activeTab === "typing" ? "text-primary-foreground" : "text-amber-500"} />
-          <span>Typing Speed Hub</span>
-          <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${activeTab === "typing" ? "bg-primary-foreground/20 text-primary-foreground" : "bg-foreground/10 text-foreground/60"}`}>
-            {typingList.length}
-          </span>
-        </button>
+      <div className="overflow-x-auto scrollbar-none -mx-1 px-1">
+        <div className="flex items-center gap-2 p-1.5 glass rounded-2xl w-fit">
+          <button
+            onClick={() => setActiveTab("typing")}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs transition-all shrink-0 ${
+              activeTab === "typing"
+                ? "bg-primary text-primary-foreground font-semibold shadow-xs"
+                : "text-foreground/60 hover:text-foreground hover:bg-foreground/5"
+            }`}
+          >
+            <Keyboard size={14} className={activeTab === "typing" ? "text-primary-foreground" : "text-amber-500"} />
+            <span>Typing Speed Hub</span>
+            <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${activeTab === "typing" ? "bg-primary-foreground/20 text-primary-foreground" : "bg-foreground/10 text-foreground/60"}`}>
+              {typingList.length}
+            </span>
+          </button>
 
-        <button
-          onClick={() => setActiveTab("problems")}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs transition-all ${
-            activeTab === "problems"
-              ? "bg-primary text-primary-foreground font-semibold shadow-xs"
-              : "text-foreground/60 hover:text-foreground hover:bg-foreground/5"
-          }`}
-        >
-          <Code2 size={14} className={activeTab === "problems" ? "text-primary-foreground" : "text-primary"} />
-          <span>Problems & Algorithms</span>
-          <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${activeTab === "problems" ? "bg-primary-foreground/20 text-primary-foreground" : "bg-foreground/10 text-foreground/60"}`}>
-            {problemList.length}
-          </span>
-        </button>
+          <button
+            onClick={() => setActiveTab("problems")}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs transition-all shrink-0 ${
+              activeTab === "problems"
+                ? "bg-primary text-primary-foreground font-semibold shadow-xs"
+                : "text-foreground/60 hover:text-foreground hover:bg-foreground/5"
+            }`}
+          >
+            <Code2 size={14} className={activeTab === "problems" ? "text-primary-foreground" : "text-primary"} />
+            <span>Problems &amp; Algorithms</span>
+            <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${activeTab === "problems" ? "bg-primary-foreground/20 text-primary-foreground" : "bg-foreground/10 text-foreground/60"}`}>
+              {problemList.length}
+            </span>
+          </button>
 
-        <button
-          onClick={() => setActiveTab("combined")}
-          className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs transition-all ${
-            activeTab === "combined"
-              ? "bg-primary text-primary-foreground font-semibold shadow-xs"
-              : "text-foreground/60 hover:text-foreground hover:bg-foreground/5"
-          }`}
-        >
-          <Trophy size={14} className={activeTab === "combined" ? "text-primary-foreground" : "text-amber-500"} />
-          <span>Combined Overall</span>
-        </button>
+          <button
+            onClick={() => setActiveTab("combined")}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs transition-all shrink-0 ${
+              activeTab === "combined"
+                ? "bg-primary text-primary-foreground font-semibold shadow-xs"
+                : "text-foreground/60 hover:text-foreground hover:bg-foreground/5"
+            }`}
+          >
+            <Trophy size={14} className={activeTab === "combined" ? "text-primary-foreground" : "text-amber-500"} />
+            <span>Combined Overall</span>
+          </button>
+        </div>
       </div>
+
 
       {/* TOP 3 PODIUM (Dedicated for each section) */}
       {collegeFilter === "All" && (

@@ -1,4 +1,5 @@
 import { supabase, isSupabaseConfigured } from '../supabase/client';
+import { uploadFile } from '../supabase/storage';
 import type { Database, CertificateStatus } from '../supabase/types';
 
 export type Certificate = Database['public']['Tables']['certificates']['Row'];
@@ -32,6 +33,32 @@ export const verifyCertificateById = async (verificationId: string) => {
 
   if (error || !data) return null;
   return data;
+};
+
+/**
+ * Upload certificate image to Supabase Storage ('certificates' bucket).
+ * Gracefully returns null if storage bucket is not created or fails.
+ */
+export const uploadCertificateBlob = async (
+  verificationId: string,
+  blob: Blob
+): Promise<string | null> => {
+  if (!isSupabaseConfigured()) return null;
+
+  try {
+    const { url, error } = await uploadFile('certificates', `${verificationId}.png`, blob, {
+      contentType: 'image/png',
+      upsert: true,
+    });
+    if (error) {
+      console.warn('Storage upload error for certificate:', error.message);
+      return null;
+    }
+    return url;
+  } catch (err) {
+    console.warn('Certificate storage upload failed:', err);
+    return null;
+  }
 };
 
 /**
@@ -91,6 +118,20 @@ export const setCertificateStatus = async (
 };
 
 /**
+ * Admin: Delete a certificate record.
+ */
+export const deleteCertificate = async (id: string): Promise<boolean> => {
+  if (!isSupabaseConfigured()) return false;
+
+  const { error } = await supabase
+    .from('certificates')
+    .delete()
+    .eq('id', id);
+
+  return !error;
+};
+
+/**
  * Record a certificate delivery job.
  */
 export const createCertificateJob = async (
@@ -137,3 +178,4 @@ export const updateCertificateJobProgress = async (
     })
     .eq('id', jobId);
 };
+

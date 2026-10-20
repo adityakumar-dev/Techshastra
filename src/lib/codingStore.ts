@@ -24,7 +24,7 @@ export interface ProblemSubmission {
   studentName: string;
   language: SupportedLanguage;
   code: string;
-  status: "Accepted" | "Wrong Answer" | "Compilation Error" | "Runtime Error";
+  status: "Accepted" | "Wrong Answer" | "Compilation Error" | "Runtime Error" | "Time Limit Exceeded";
   passedTestCases: number;
   totalTestCases: number;
   runtimeMs: number;
@@ -88,8 +88,12 @@ export function enrichProblem(p: CodingProblem): Problem {
           explanation: tc.explanation,
         }));
 
+  const chosenYear = p.targetYear || p.targetSemester || "All";
+
   return {
     ...p,
+    targetYear: chosenYear as any,
+    targetSemester: chosenYear as any,
     author: p.publishedBy || "Faculty Admin",
     testCases,
     examples,
