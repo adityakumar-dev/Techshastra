@@ -7,7 +7,8 @@ import {
   toggleProblemPublish,
   type CodingProblem,
   type ProblemDifficulty,
-  type TargetSemester,
+  type TargetYear,
+  YEAR_PRESETS,
   getDefaultStarterCode,
 } from "@/lib/services/problemService";
 import { type SupportedLanguage, type TestCase } from "@/lib/services/codeExecutionService";
@@ -107,17 +108,7 @@ const TAG_PRESETS = [
   "Sliding Window",
 ];
 
-export const SEMESTER_PRESETS: TargetSemester[] = [
-  "All",
-  "Sem 1",
-  "Sem 2",
-  "Sem 3",
-  "Sem 4",
-  "Sem 5",
-  "Sem 6",
-  "Sem 7",
-  "Sem 8",
-];
+export const COHORT_YEAR_PRESETS: TargetYear[] = YEAR_PRESETS;
 
 const POINTS_PRESETS = [30, 50, 80, 100, 150];
 
@@ -131,7 +122,7 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
   const [search, setSearch] = useState("");
   const [difficultyFilter, setDifficultyFilter] = useState<string>("All");
   const [facultyFilter, setFacultyFilter] = useState<string>("All");
-  const [semesterFilter, setSemesterFilter] = useState<string>("All");
+  const [yearFilter, setYearFilter] = useState<string>("All");
 
   // Modal editor state
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -143,7 +134,7 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
   const [category, setCategory] = useState("Algorithms");
   const [difficulty, setDifficulty] = useState<ProblemDifficulty>("Easy");
   const [points, setPoints] = useState(50);
-  const [targetSemester, setTargetSemester] = useState<TargetSemester>("All");
+  const [targetYear, setTargetYear] = useState<TargetYear>("All");
   const [publishedBy, setPublishedBy] = useState(currentAdminName);
   const [isPublished, setIsPublished] = useState(true);
   const [description, setDescription] = useState("");
@@ -197,11 +188,24 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
     else if (/\b(medium)\b/i.test(clean)) setDifficulty("Medium");
     else if (/\b(easy)\b/i.test(clean)) setDifficulty("Easy");
 
-    // 3. Semester
-    const semMatch = clean.match(/(?:semester|sem)\s*[:#\-\s]?\s*([1-8])/i);
-    if (semMatch) {
-      const semNum = semMatch[1];
-      setTargetSemester(`Sem ${semNum}` as TargetSemester);
+    // 3. Academic Year
+    if (/1st\s*year|first\s*year|\byear\s*1\b/i.test(clean)) {
+      setTargetYear("1st Year");
+    } else if (/2nd\s*year|second\s*year|\byear\s*2\b/i.test(clean)) {
+      setTargetYear("2nd Year");
+    } else if (/3rd\s*year|third\s*year|\byear\s*3\b/i.test(clean)) {
+      setTargetYear("3rd Year");
+    } else if (/4th\s*year|fourth\s*year|final\s*year|\byear\s*4\b/i.test(clean)) {
+      setTargetYear("4th Year");
+    } else {
+      const semMatch = clean.match(/(?:semester|sem)\s*[:#\-\s]?\s*([1-8])/i);
+      if (semMatch) {
+        const sem = parseInt(semMatch[1], 10);
+        if (sem <= 2) setTargetYear("1st Year");
+        else if (sem <= 4) setTargetYear("2nd Year");
+        else if (sem <= 6) setTargetYear("3rd Year");
+        else setTargetYear("4th Year");
+      }
     }
 
     // 4. Constraints
@@ -370,12 +374,13 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
       const matchesFaculty =
         !isSuperAdmin || facultyFilter === "All" || p.publishedBy === facultyFilter;
 
-      const matchesSemester =
-        semesterFilter === "All" || (p.targetSemester || "All") === semesterFilter;
+      const probYear = p.targetYear || p.targetSemester || "All";
+      const matchesYear =
+        yearFilter === "All" || probYear === yearFilter;
 
-      return matchesSearch && matchesDiff && matchesFaculty && matchesSemester;
+      return matchesSearch && matchesDiff && matchesFaculty && matchesYear;
     });
-  }, [scopedProblems, search, difficultyFilter, facultyFilter, semesterFilter, isSuperAdmin]);
+  }, [scopedProblems, search, difficultyFilter, facultyFilter, yearFilter, isSuperAdmin]);
 
   const openNewProblemDialog = () => {
     const defaults = getDefaultStarterCode();
@@ -384,7 +389,7 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
     setCategory("Algorithms");
     setDifficulty("Easy");
     setPoints(50);
-    setTargetSemester("All");
+    setTargetYear("All");
     setOcrRawText("");
     setShowRawOcr(false);
     // Locked strictly to logged in admin identity
@@ -421,7 +426,7 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
     setCategory(prob.category || "Algorithms");
     setDifficulty(prob.difficulty);
     setPoints(prob.points);
-    setTargetSemester(prob.targetSemester || "All");
+    setTargetYear((prob.targetYear || prob.targetSemester || "All") as TargetYear);
     setOcrRawText("");
     setShowRawOcr(false);
     // If not super admin, lock to currentAdminName
@@ -534,7 +539,8 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
         difficulty,
         category: category.trim(),
         points: Number(points) || 50,
-        targetSemester: targetSemester || "All",
+        targetYear: targetYear || "All",
+        targetSemester: targetYear || "All",
         publishedBy: authorToUse,
         publishedAt: new Date().toISOString(),
         isPublished,
@@ -877,16 +883,16 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
             ))}
           </div>
 
-          {/* Semester Filter Dropdown */}
-          <Select value={semesterFilter} onValueChange={setSemesterFilter}>
+          {/* Academic Year Filter Dropdown */}
+          <Select value={yearFilter} onValueChange={setYearFilter}>
             <SelectTrigger className="h-8 text-xs w-[130px] rounded-xl bg-white/80 dark:bg-white/5 border-white/30 dark:border-white/10 text-foreground font-medium shadow-xs">
-              <SelectValue placeholder="All Semesters" />
+              <SelectValue placeholder="All Years" />
             </SelectTrigger>
             <SelectContent className="glass border-white/30 dark:border-white/10">
-              <SelectItem value="All">All Semesters</SelectItem>
-              {SEMESTER_PRESETS.filter((s) => s !== "All").map((sem) => (
-                <SelectItem key={sem} value={sem}>
-                  {sem}
+              <SelectItem value="All">All Years</SelectItem>
+              {COHORT_YEAR_PRESETS.filter((y) => y !== "All").map((yr) => (
+                <SelectItem key={yr} value={yr}>
+                  {yr}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -997,7 +1003,7 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
                         className="text-[10px] py-0 px-2 rounded-md border-purple-500/40 text-purple-900 dark:text-purple-300 bg-purple-500/10 font-semibold"
                       >
                         <GraduationCap size={11} className="mr-1 inline text-purple-600 dark:text-purple-400" />
-                        {prob.targetSemester || "All Semesters"}
+                        {prob.targetYear || prob.targetSemester || "All Years"}
                       </Badge>
                       <span className="text-[11px] font-mono text-primary font-bold">
                         +{prob.points} pts
@@ -1311,36 +1317,36 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
                   )}
                 </div>
 
-                {/* Target Semester Selector for Specific Students */}
+                {/* Target Academic Year Selector for Students */}
                 <div className="space-y-1.5 p-3.5 rounded-xl glass bg-white/40 dark:bg-white/5 border border-white/30 dark:border-white/10">
                   <div className="flex items-center justify-between">
                     <Label className="text-xs font-semibold text-foreground flex items-center gap-1.5">
                       <GraduationCap size={14} className="text-primary" />
-                      Target Semester (Student Cohort Access)
+                      Target Academic Year (Student Cohort Access)
                     </Label>
                     <Badge
                       variant="outline"
                       className="text-[10px] border-primary/30 text-primary bg-primary/10 font-mono font-medium"
                     >
-                      {targetSemester === "All" ? "All Semesters Eligible" : `Visible to ${targetSemester} Students Only`}
+                      {targetYear === "All" ? "All Years Eligible" : `Visible to ${targetYear} Students Only`}
                     </Badge>
                   </div>
                   <p className="text-[11px] text-muted-foreground">
-                    Specify which semester students can see and attempt this challenge in their portal.
+                    Specify which academic year of students can view and solve this challenge in their portal.
                   </p>
-                  <div className="grid grid-cols-3 sm:grid-cols-9 gap-1.5 pt-1.5">
-                    {SEMESTER_PRESETS.map((sem) => (
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-1.5">
+                    {COHORT_YEAR_PRESETS.map((yr) => (
                       <button
-                        key={sem}
+                        key={yr}
                         type="button"
-                        onClick={() => setTargetSemester(sem)}
-                        className={`py-1.5 px-2 rounded-xl text-xs font-medium transition-all text-center ${
-                          targetSemester === sem
+                        onClick={() => setTargetYear(yr)}
+                        className={`py-2 px-3 rounded-xl text-xs font-medium transition-all text-center ${
+                          targetYear === yr
                             ? "bg-primary text-primary-foreground shadow-sm font-semibold ring-1 ring-primary/40"
                             : "glass border border-white/30 dark:border-white/10 hover:bg-white/60 dark:hover:bg-white/10 text-muted-foreground hover:text-foreground"
                         }`}
                       >
-                        {sem}
+                        {yr === "All" ? "All Years" : yr}
                       </button>
                     ))}
                   </div>
@@ -1514,7 +1520,7 @@ export const AdminProblemsTab: React.FC<AdminProblemsTabProps> = ({
                       </div>
                       <p className="text-[11px] text-muted-foreground mt-1">
                         {isPublished
-                          ? "This challenge will be visible to students in the designated semester."
+                          ? "This challenge will be visible to students in the designated academic year."
                           : "Saved as draft. Only you can view, edit, or test this question."}
                       </p>
                     </div>

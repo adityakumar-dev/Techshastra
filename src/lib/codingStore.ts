@@ -88,8 +88,12 @@ export function enrichProblem(p: CodingProblem): Problem {
           explanation: tc.explanation,
         }));
 
+  const chosenYear = p.targetYear || p.targetSemester || "All";
+
   return {
     ...p,
+    targetYear: chosenYear as any,
+    targetSemester: chosenYear as any,
     author: p.publishedBy || "Faculty Admin",
     testCases,
     examples,
