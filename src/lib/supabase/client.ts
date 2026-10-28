@@ -65,4 +65,16 @@ export const supabase: any = createClient<any>(safeUrl, safeKey, {
     autoRefreshToken: true,
     detectSessionInUrl: true,
   },
+  global: {
+    fetch: (url, options = {}) => {
+      const headers = new Headers(options.headers || {});
+      if (typeof window !== 'undefined') {
+        const token = sessionStorage.getItem('ts_admin_token');
+        if (token && !headers.has('x-admin-token')) {
+          headers.set('x-admin-token', token);
+        }
+      }
+      return fetch(url, { ...options, headers });
+    },
+  },
 });

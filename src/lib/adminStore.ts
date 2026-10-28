@@ -31,6 +31,7 @@ import {
   togglePageVisibilityDB,
   getSuperAdminFromDB,
   saveSuperAdminToDB,
+  isSuperAdminConfiguredDB,
 } from "./services/adminService";
 import { supabase, isSupabaseConfigured } from "./supabase/client";
 
@@ -95,22 +96,16 @@ export const isSuperAdminDefaultLocal = (): boolean => {
  * (neither in localStorage nor in Supabase). Shows setup only once globally.
  */
 export const isSuperAdminSetupNeeded = async (): Promise<boolean> => {
-  // Fast path: if localStorage already has non-default credentials, skip the check
-  if (!isSuperAdminDefaultLocal()) return false;
+  // If Supabase is configured, check database directly as the source of truth
+  if (isSupabaseConfigured()) {
+    try {
+      const isConfigured = await isSuperAdminConfiguredDB();
+      return !isConfigured; // If not configured in DB, setup is needed
+    } catch (_e) {}
+  }
 
-  // Slow path: check Supabase for any super_admin row
-  try {
-    const dbAdmin = await getSuperAdminFromDB();
-    if (dbAdmin) {
-      // Super admin exists in DB — sync credentials to localStorage
-      const key = generateCredKey(dbAdmin.name, dbAdmin.mobile, dbAdmin.dob);
-      localStorage.setItem(SUPER_ADMIN_KEY_STORAGE, key);
-      return false; // Setup is done, don't show setup page
-    }
-  } catch (_e) {}
-
-  // No super admin anywhere — show setup
-  return true;
+  // Fallback for offline mode: check localStorage
+  return isSuperAdminDefaultLocal();
 };
 
 /** @deprecated Use isSuperAdminSetupNeeded() for cross-device correctness */
@@ -169,22 +164,33 @@ export const verifySuperAdmin = async (
   const sMobile = cleanMobile(mobile);
   const sDob = cleanDob(dob);
 
-  // 1. Check Supabase DB
-  try {
-    const dbAdmin = await getSuperAdminFromDB();
-    if (dbAdmin) {
-      if (
-        cleanName(dbAdmin.name) === sName &&
-        matchMobile(sMobile, dbAdmin.mobile) &&
-        cleanDob(dbAdmin.dob) === sDob
-      ) {
-        return { success: true, name: dbAdmin.name };
-      }
-      return { success: false };
-    }
-  } catch (_e) {}
+  // 1. Authoritative check via secure RPC verify_admin_login (bypasses RLS safely)
+  if (isSupabaseConfigured()) {
+    try {
+      const { data: rpcRes, error: rpcErr } = await (supabase.rpc as any)('verify_admin_login', {
+        p_name: sName,
+        p_mobile: sMobile,
+        p_dob: sDob,
+      });
 
-  // 2. Fallback to localStorage configured key
+      if (!rpcErr && rpcRes) {
+        if (rpcRes.success && rpcRes.role === 'super_admin') {
+          if (rpcRes.session_token && typeof sessionStorage !== 'undefined') {
+            sessionStorage.setItem('ts_admin_token', rpcRes.session_token);
+          }
+          if (rpcRes.session_id && typeof sessionStorage !== 'undefined') {
+            sessionStorage.setItem('ts_active_session_id', rpcRes.session_id);
+          }
+          return { success: true, name: rpcRes.name };
+        }
+        if (rpcRes.blocked || rpcRes.success === false) {
+          return { success: false };
+        }
+      }
+    } catch (_e) {}
+  }
+
+  // 2. Fallback to localStorage configured key (offline mode)
   const localKey = localStorage.getItem(SUPER_ADMIN_KEY_STORAGE);
   const defaultKey = generateCredKey(DEFAULT_SUPER_ADMIN.name, DEFAULT_SUPER_ADMIN.mobile, DEFAULT_SUPER_ADMIN.dob);
   const targetKey = generateCredKey(name, mobile, dob);

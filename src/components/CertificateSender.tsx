@@ -1178,28 +1178,29 @@ const CertificateSender: React.FC = () => {
         const name = (row.Name || row.name || `Recipient_${idx + 1}`).trim().replace(/\s+/g, "_");
 
         if (format === "pdf") {
-            const url = URL.createObjectURL(blob);
-            const printWindow = window.open("", "_blank");
+            const imgUrl = URL.createObjectURL(blob);
+            const htmlContent = `<!DOCTYPE html>
+<html>
+<head>
+    <title>TechShastra Certificate - ${name}</title>
+    <style>
+        @page { size: landscape; margin: 0; }
+        body { margin: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; background: #000; }
+        img { max-width: 100%; max-height: 100vh; object-fit: contain; }
+    </style>
+</head>
+<body>
+    <img src="${imgUrl}" />
+</body>
+</html>`;
+            const htmlBlob = new Blob([htmlContent], { type: "text/html;charset=utf-8" });
+            const pageUrl = URL.createObjectURL(htmlBlob);
+            const printWindow = window.open(pageUrl, "_blank");
             if (printWindow) {
-                printWindow.document.write(`
-                    <html>
-                    <head>
-                        <title>TechShastra Certificate - ${name}</title>
-                        <style>
-                            @page { size: landscape; margin: 0; }
-                            body { margin: 0; display: flex; justify-content: center; align-items: center; min-height: 100vh; background: #000; }
-                            img { max-width: 100%; max-height: 100vh; object-fit: contain; }
-                        </style>
-                    </head>
-                    <body>
-                        <img src="${url}" />
-                    </body>
-                    </html>
-                `);
-                printWindow.document.close();
                 setTimeout(() => {
                     printWindow.print();
-                    URL.revokeObjectURL(url);
+                    URL.revokeObjectURL(pageUrl);
+                    URL.revokeObjectURL(imgUrl);
                 }, 600);
             }
         } else {

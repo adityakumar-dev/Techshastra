@@ -378,10 +378,16 @@ export const generateResumeHTML = (
 // ─── OPEN HELPERS ────────────────────────────────────────────────────────────
 
 const openWindow = (html: string): Window | null => {
-  const win = window.open("", "_blank", "width=900,height=700");
-  if (!win) { alert("Please allow popups to preview/print your resume."); return null; }
-  win.document.write(html);
-  win.document.close();
+  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const win = window.open(url, "_blank", "width=900,height=700");
+  if (!win) {
+    alert("Please allow popups to preview/print your resume.");
+    URL.revokeObjectURL(url);
+    return null;
+  }
+  // Automatically revoke the object URL after load
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
   return win;
 };
 

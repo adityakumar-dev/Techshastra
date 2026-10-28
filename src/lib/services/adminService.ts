@@ -158,6 +158,20 @@ export const setAdminCredentialBlockDB = async (
 // ─── SUPER ADMIN GLOBAL STATE (Server-Backed) ─────────────────────────
 
 /**
+ * Check if a super admin is already configured in Supabase without exposing credentials.
+ */
+export const isSuperAdminConfiguredDB = async (): Promise<boolean> => {
+  if (!isSupabaseConfigured()) return false;
+  try {
+    const { data, error } = await (supabase.rpc as any)('is_super_admin_configured');
+    if (!error && typeof data === 'boolean') {
+      return data;
+    }
+  } catch (_e) {}
+  return false;
+};
+
+/**
  * Fetch the super admin record from Supabase.
  * Returns null if not found (setup not yet done).
  */
@@ -172,15 +186,14 @@ export const getSuperAdminFromDB = async (): Promise<AdminCredentialDB | null> =
     .maybeSingle();
 
   if (error) {
-    console.error('Failed to fetch super admin from Supabase:', error);
+    console.warn('Super admin fetch restricted by RLS (expected for non-admin sessions).');
     return null;
   }
   return data;
 };
 
 /**
- * Save (upsert) super admin credentials to Supabase.
- * Uses a sentinel ID 'super_admin' for stable upsert.
+ * Save (upsert) super admin credentials to Supabase via secure setup RPC.
  */
 export const saveSuperAdminToDB = async (
   name: string,
@@ -189,9 +202,17 @@ export const saveSuperAdminToDB = async (
 ): Promise<boolean> => {
   if (!isSupabaseConfigured()) return false;
 
-  // First check if a super_admin already exists to update instead of insert
-  const existing = await getSuperAdminFromDB();
+  try {
+    const { data, error } = await (supabase.rpc as any)('setup_super_admin', {
+      p_name: name,
+      p_mobile: mobile,
+      p_dob: dob,
+    });
+    if (!error && data === true) return true;
+  } catch (_e) {}
 
+  // Fallback to direct upsert if caller already has an active super_admin session
+  const existing = await getSuperAdminFromDB();
   if (existing) {
     const { error } = await supabase
       .from('admin_credentials')
@@ -267,47 +288,38 @@ export const getPendingAdminLoginRequestsDB = async (): Promise<AdminLoginReques
 export const checkPendingRegistrationByMobileDB = async (
   mobile: string
 ): Promise<AdminLoginRequestDB | null> => {
-  if (!isSupabaseConfigured()) return null;
-  const clean = mobile.replace(/[^0-9]/g, '');
-  const last10 = clean.slice(-10);
-
-  const { data, error } = await supabase
-    .from('admin_login_requests')
-    .select('*')
-    .eq('status', 'pending')
-    .order('requested_at', { ascending: false });
-
-  if (error || !data) return null;
-  return (
-    data.find((r) => {
-      const rClean = r.mobile.replace(/[^0-9]/g, '');
-      return rClean === clean || (rClean.slice(-10) === last10 && last10.length === 10);
-    }) || null
-  );
+  return getRequestStatusByMobileDB(mobile);
 };
 
 /**
- * Fetch the latest request status for a given mobile number (to let applicant check status).
+ * Fetch the latest request status for a given mobile number using secure RPC.
  */
 export const getRequestStatusByMobileDB = async (
   mobile: string
 ): Promise<AdminLoginRequestDB | null> => {
   if (!isSupabaseConfigured()) return null;
   const clean = mobile.replace(/[^0-9]/g, '');
-  const last10 = clean.slice(-10);
 
-  const { data, error } = await supabase
-    .from('admin_login_requests')
-    .select('*')
-    .order('requested_at', { ascending: false });
+  try {
+    const { data, error } = await (supabase.rpc as any)('get_admin_request_status', { p_mobile: clean });
+    if (!error && data && data.found) {
+      return {
+        id: 'status_check',
+        admin_id: 'status_user',
+        admin_name: data.name,
+        mobile: clean,
+        dob: '',
+        role: 'admin',
+        status: data.status,
+        requested_at: data.requestedAt || new Date().toISOString(),
+        responded_at: data.respondedAt || null,
+        created_at: data.requestedAt || new Date().toISOString(),
+        is_new_registration: false,
+      } as any;
+    }
+  } catch (_e) {}
 
-  if (error || !data) return null;
-  return (
-    data.find((r) => {
-      const rClean = r.mobile.replace(/[^0-9]/g, '');
-      return rClean === clean || (rClean.slice(-10) === last10 && last10.length === 10);
-    }) || null
-  );
+  return null;
 };
 
 /**
@@ -383,9 +395,12 @@ export const registerAdminSession = async (
     return null;
   }
 
-  // Save current active session ID to sessionStorage for this tab
+  // Save current active session ID and admin token to sessionStorage for this tab
   if (typeof sessionStorage !== 'undefined') {
     sessionStorage.setItem('ts_active_session_id', data.id);
+    if (sessionToken) {
+      sessionStorage.setItem('ts_admin_token', sessionToken);
+    }
   }
   return data;
 };
