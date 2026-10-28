@@ -169,9 +169,9 @@ const App = () => (
                 </ProtectedRoute>
               } />
 
-              {/* ── Super Admin Portal (Consolidated into Admin Panel) ────────────── */}
-              <Route path="/superadmin" element={<Navigate to="/admin?tab=super-admin" replace />} />
-              <Route path="/super-admin" element={<Navigate to="/admin?tab=super-admin" replace />} />
+              {/* ── Super Admin Portal ────────────── */}
+              <Route path="/superadmin" element={<SuperAdmin />} />
+              <Route path="/super-admin" element={<SuperAdmin />} />
 
               {/* ── 404 ──────────────────────────── */}
               <Route path="*" element={<NotFound />} />

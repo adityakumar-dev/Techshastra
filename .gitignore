@@ -38,3 +38,7 @@ supabase/seed.sql
 
 # Supabase docker env files (contain service_role key + DB password)
 supabase/.temp/**
+
+#Local Ai coding agent skills
+.agents/
+skills-lock.json

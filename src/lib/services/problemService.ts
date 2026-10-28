@@ -191,38 +191,83 @@ function mapProblemToRow(p: CodingProblem): Record<string, any> {
 // ── SERVICE METHODS ─────────────────────────────────────────────────────────
 
 /**
- * Get all published problems for students.
+ * Public problem columns that omit hidden test cases to protect evaluation integrity.
+ */
+const PUBLIC_PROBLEM_COLUMNS =
+  "id, slug, title, difficulty, category, points, published_by, published_at, is_published, description, constraints, tags, starter_code, sample_test_cases, target_year, target_semester, created_at, updated_at";
+
+/**
+ * Get all published problems for students (omitting secret evaluation cases).
  */
 export async function getPublishedProblems(): Promise<CodingProblem[]> {
   if (!isSupabaseConfigured()) {
-    return getStoredProblems().filter((p) => p.isPublished);
+    return getStoredProblems().filter((p) => p.isPublished).map((p) => ({ ...p, hiddenTestCases: [] }));
   }
 
   try {
     const { data, error } = await supabase
       .from("coding_problems")
-      .select("*")
+      .select(PUBLIC_PROBLEM_COLUMNS)
       .eq("is_published", true)
       .order("created_at", { ascending: false });
 
     if (error) {
       console.warn("Supabase fetch failed, falling back to local problems:", error);
-      return getStoredProblems().filter((p) => p.isPublished);
+      return getStoredProblems().filter((p) => p.isPublished).map((p) => ({ ...p, hiddenTestCases: [] }));
     }
 
     if (data && data.length > 0) {
-      const mapped = data.map(mapRowToProblem);
+      // Map rows ensuring hidden test cases are never saved to student local storage
+      const mapped = data.map((row: any) => mapRowToProblem({ ...row, hidden_test_cases: [] }));
       // Cache locally
       saveStoredProblems(mapped);
       return mapped;
     }
 
     // If Supabase returned empty table, check local store
-    return getStoredProblems().filter((p) => p.isPublished);
+    return getStoredProblems().filter((p) => p.isPublished).map((p) => ({ ...p, hiddenTestCases: [] }));
   } catch (err) {
     console.error("Error fetching published problems:", err);
-    return getStoredProblems().filter((p) => p.isPublished);
+    return getStoredProblems().filter((p) => p.isPublished).map((p) => ({ ...p, hiddenTestCases: [] }));
   }
+}
+
+/**
+ * Retrieve evaluation test cases strictly in-memory during submission.
+ * Never persisted to localStorage or public state.
+ */
+export async function getProblemEvaluationCases(problemId: string): Promise<TestCase[]> {
+  if (isSupabaseConfigured()) {
+    try {
+      const { data, error } = await supabase
+        .from("coding_problems")
+        .select("sample_test_cases, hidden_test_cases")
+        .eq("id", problemId)
+        .maybeSingle();
+
+      if (!error && data) {
+        const samples = Array.isArray(data.sample_test_cases) ? data.sample_test_cases : [];
+        const hiddens = Array.isArray(data.hidden_test_cases) ? data.hidden_test_cases : [];
+        return [
+          ...samples.map((tc: any) => ({ ...tc, isHidden: false })),
+          ...hiddens.map((tc: any) => ({ ...tc, isHidden: true })),
+        ];
+      }
+    } catch (_e) {}
+  }
+
+  // Fallback to local store if offline
+  const localList = getStoredProblems();
+  const problem = localList.find((p) => p.id === problemId);
+  if (problem) {
+    const samples = problem.sampleTestCases || [];
+    const hiddens = problem.hiddenTestCases || [];
+    return [
+      ...samples.map((tc) => ({ ...tc, isHidden: false })),
+      ...hiddens.map((tc) => ({ ...tc, isHidden: true })),
+    ];
+  }
+  return [];
 }
 
 /**
@@ -271,7 +316,7 @@ export async function getProblemById(id: string): Promise<CodingProblem | null> 
   try {
     const { data, error } = await supabase
       .from("coding_problems")
-      .select("*")
+      .select(PUBLIC_PROBLEM_COLUMNS)
       .eq("id", id)
       .maybeSingle();
 
@@ -279,7 +324,7 @@ export async function getProblemById(id: string): Promise<CodingProblem | null> 
       return cached || null;
     }
 
-    const problem = mapRowToProblem(data);
+    const problem = mapRowToProblem({ ...data, hidden_test_cases: [] });
     return problem;
   } catch {
     return cached || null;

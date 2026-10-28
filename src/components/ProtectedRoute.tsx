@@ -11,6 +11,7 @@ import { Navigate, useNavigate } from "react-router-dom";
 import { type AdminRole } from "@/lib/adminStore";
 import { Loader2, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { supabase, isSupabaseConfigured } from "@/lib/supabase/client";
 
 const IDLE_WARN_MS  = 25 * 60 * 1000;  // 25 min → show warning
 const IDLE_LIMIT_MS = 30 * 60 * 1000;  // 30 min → force logout
@@ -31,6 +32,8 @@ const ProtectedRoute = ({ children, requireAdmin = false }: ProtectedRouteProps)
 
   const doLogout = useCallback(() => {
     sessionStorage.removeItem("ts_admin_session");
+    sessionStorage.removeItem("ts_admin_token");
+    sessionStorage.removeItem("ts_active_session_id");
     navigate("/auth", { replace: true });
   }, [navigate]);
 
@@ -43,20 +46,71 @@ const ProtectedRoute = ({ children, requireAdmin = false }: ProtectedRouteProps)
   }, [doLogout]);
 
   useEffect(() => {
-    // Read session
-    const raw = sessionStorage.getItem("ts_admin_session");
-    if (raw) {
+    let isMounted = true;
+
+    const verifySession = async () => {
+      const raw = sessionStorage.getItem("ts_admin_session");
+      const token = sessionStorage.getItem("ts_admin_token");
+
+      if (!raw) {
+        if (isMounted) setLoading(false);
+        return;
+      }
+
       try {
         const session = JSON.parse(raw);
         const validRoles = ["super_admin", "admin", "member", "faculty"];
-        if (session && validRoles.includes(session.role)) {
+        if (!session || !validRoles.includes(session.role)) {
+          doLogout();
+          if (isMounted) setLoading(false);
+          return;
+        }
+
+        // Server-backed verification if connected to Supabase
+        if (isSupabaseConfigured()) {
+          if (!token) {
+            // Spoofed session without token
+            doLogout();
+            if (isMounted) setLoading(false);
+            return;
+          }
+
+          const { data: isValid, error } = await (supabase.rpc as any)("is_admin_session");
+          if (error || !isValid) {
+            // Expired, revoked, or forged token
+            doLogout();
+            if (isMounted) setLoading(false);
+            return;
+          }
+
+          // If session claims to be super_admin, verify via is_super_admin_session
+          if (session.role === "super_admin") {
+            const { data: isSuper, error: superErr } = await (supabase.rpc as any)("is_super_admin_session");
+            if (superErr || !isSuper) {
+              // Downgrade to member to prevent privilege escalation
+              session.role = "member";
+              sessionStorage.setItem("ts_admin_session", JSON.stringify(session));
+            }
+          }
+        }
+
+        if (isMounted) {
           const normalized: AdminRole = session.role === "admin" ? "member" : (session.role as AdminRole);
           setUserRole(normalized);
+          setLoading(false);
         }
-      } catch (_e) { /* invalid */ }
-    }
-    setLoading(false);
-  }, []);
+      } catch (_e) {
+        doLogout();
+        if (isMounted) setLoading(false);
+      }
+    };
+
+    verifySession();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [doLogout]);
 
   // Start idle timers once authenticated
   useEffect(() => {

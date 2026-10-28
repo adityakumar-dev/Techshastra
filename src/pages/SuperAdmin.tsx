@@ -24,6 +24,7 @@ import {
   registerAdminSession,
   logAdminAction,
 } from "@/lib/services/adminService";
+import { supabase } from "@/lib/supabase/client";
 import { addLogEntry, getLogEntries, type LogEntry } from "@/lib/activityLogStore";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -223,6 +224,21 @@ export default function SuperAdmin() {
       }
 
       await setSuperAdminCredentials(setupName.trim(), setupMobile.trim(), setupDob);
+
+      // Authenticate via secure RPC to acquire valid admin session token for RLS
+      try {
+        const { data: authRes } = await (supabase.rpc as any)("verify_admin_login", {
+          p_name: setupName.trim(),
+          p_mobile: setupMobile.trim(),
+          p_dob: setupDob,
+        });
+        if (authRes?.session_token) {
+          sessionStorage.setItem("ts_admin_token", authRes.session_token);
+        }
+        if (authRes?.session_id) {
+          sessionStorage.setItem("ts_active_session_id", authRes.session_id);
+        }
+      } catch (_e) {}
 
       // Create Super Admin session
       sessionStorage.setItem(

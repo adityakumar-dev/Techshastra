@@ -11,7 +11,8 @@ import { type ReactNode } from "react";
 const isAdminSession = (): boolean => {
   try {
     const raw = sessionStorage.getItem("ts_admin_session");
-    if (!raw) return false;
+    const token = sessionStorage.getItem("ts_admin_token");
+    if (!raw || !token) return false;
     const s = JSON.parse(raw);
     return s.role === "super_admin" || s.role === "admin";
   } catch {

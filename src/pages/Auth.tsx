@@ -8,6 +8,7 @@ import {
   createAdminLoginRequest,
   createAdminCredential,
   getClientDeviceString,
+  getStoredCredentials,
 } from "@/lib/adminStore";
 import {
   registerAdminSession,
@@ -135,36 +136,46 @@ export default function Auth() {
       const sMobile = mobileCheck.cleaned;
       const sDob = signInDob.trim().replace(/\//g, "-");
 
-      // 1. Authoritative check from Supabase PostgreSQL admin_credentials
+      // 1. Authoritative check via secure RPC verify_admin_login (avoids dumping all credentials)
       let dbRecord: AdminCredential | null = null;
-      if (isSupabaseConfigured()) {
-        const { data: dbRows, error: dbErr } = await (supabase
-          .from("admin_credentials" as any)
-          .select("*") as any);
+      let sessionToken: string | null = null;
 
-        if (!dbErr && dbRows && dbRows.length > 0) {
-          const match: any = (dbRows as any[]).find((r: any) => {
-            const rMobile = (r.mobile || "").replace(/[^0-9]/g, "");
-            const mMatch = rMobile === sMobile || (rMobile.slice(-10) === sMobile.slice(-10) && sMobile.length >= 10);
-            const nMatch = (r.name || "").toLowerCase().trim() === sName.toLowerCase().trim();
-            const dMatch = (r.dob || "").trim().replace(/\//g, "-") === sDob;
-            return mMatch && nMatch && dMatch;
+      if (isSupabaseConfigured()) {
+        try {
+          const { data: rpcRes, error: rpcErr } = await (supabase.rpc as any)("verify_admin_login", {
+            p_name: sName,
+            p_mobile: sMobile,
+            p_dob: sDob,
           });
 
-          if (match) {
-            dbRecord = {
-              id: match.id,
-              name: match.name,
-              mobile: match.mobile,
-              dob: match.dob,
-              email: match.email || undefined,
-              role: match.role as any,
-              is_blocked: match.is_blocked,
-              blocked_at: match.blocked_at || undefined,
-              block_reason: match.block_reason || undefined,
-              created_at: match.created_at,
-            };
+          if (!rpcErr && rpcRes) {
+            if (rpcRes.success) {
+              dbRecord = {
+                id: rpcRes.id,
+                name: rpcRes.name,
+                mobile: sMobile,
+                dob: sDob,
+                role: rpcRes.role as any,
+                is_blocked: false,
+                created_at: new Date().toISOString(),
+              };
+              sessionToken = rpcRes.session_token || null;
+              if (rpcRes.session_id) {
+                sessionStorage.setItem("ts_active_session_id", rpcRes.session_id);
+              }
+            } else if (rpcRes.blocked) {
+              setBlockedAccount(rpcRes.name || sName);
+              setLoading(false);
+              toast({
+                title: "Account Suspended ⛔",
+                description: `Access for ${rpcRes.name || sName} has been suspended by the Super Admin.`,
+                variant: "destructive",
+              });
+              return;
+            }
           }
+        } catch (_rpcErr) {
+          // Graceful fallback to local credentials if RPC is temporarily unavailable
         }
       }
 
@@ -203,6 +214,10 @@ export default function Auth() {
           : rawRole === "faculty"
             ? "faculty"
             : "member";
+
+        if (sessionToken) {
+          sessionStorage.setItem("ts_admin_token", sessionToken);
+        }
 
         sessionStorage.setItem(
           "ts_admin_session",
@@ -434,9 +449,9 @@ export default function Auth() {
           respondedAt: record.responded_at || undefined,
         });
       } else {
-        // Also check if they are already in admin_credentials
-        const remoteCreds = await getAdminUsers().catch(() => []);
-        const matched = remoteCreds.find(
+        // Fallback: check local storage credentials if offline
+        const localCreds = getStoredCredentials();
+        const matched = localCreds.find(
           (c) =>
             c.mobile.replace(/[^0-9]/g, "").slice(-10) ===
             statusMobile.replace(/[^0-9]/g, "").slice(-10)

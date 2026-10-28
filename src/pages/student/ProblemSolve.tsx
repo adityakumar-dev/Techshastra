@@ -15,6 +15,7 @@ import {
   type SupportedLanguage,
   type TestCaseResult,
 } from "@/lib/services/codeExecutionService";
+import { getProblemEvaluationCases } from "@/lib/services/problemService";
 import {
   Play,
   Send,
@@ -165,8 +166,10 @@ export const ProblemSolve: React.FC = () => {
     if (isMobile) setMobileTab("output");
 
     try {
-      // Evaluate all test cases (hidden cases are protected inside evaluateTestCases)
-      const evalOutcome = await evaluateTestCases(code, language, problem.testCases);
+      // Evaluate all test cases (hidden cases fetched in-memory on demand; never leaked to storage/catalog)
+      const evalCases = await getProblemEvaluationCases(problem.id);
+      const testCasesToRun = evalCases.length > 0 ? evalCases : problem.testCases;
+      const evalOutcome = await evaluateTestCases(code, language, testCasesToRun);
 
       setRunResult({
         status: evalOutcome.status,
