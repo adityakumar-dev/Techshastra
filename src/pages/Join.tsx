@@ -229,7 +229,13 @@ const InterestsGrid = ({
 
 // ─── SIGNUP FORM ──────────────────────────────────────────────────────────────
 
-const SignupForm = ({ onSuccess }: { onSuccess: (username: string) => void }) => {
+const SignupForm = ({
+  onSuccess,
+  onSwitchToSignin,
+}: {
+  onSuccess: (username: string) => void;
+  onSwitchToSignin?: () => void;
+}) => {
   const { toast } = useToast();
   const { login } = useStudentAuth();
   const [showPw, setShowPw] = useState(false);
@@ -266,35 +272,24 @@ const SignupForm = ({ onSuccess }: { onSuccess: (username: string) => void }) =>
     setLoading(true);
     try {
       // 1. Persist directly to Supabase Backend
-      try {
-        await registerStudentProfile({
-          name: data.name,
-          email: data.email,
-          password: data.password,
-          rollNumber: data.rollNumber,
-          course: data.course,
-          year: data.year,
-          bio: data.bio,
-          githubUsername: data.githubUsername,
-          linkedinUrl: data.linkedinUrl || undefined,
-          interests: data.interests,
-          skills: [],
-        });
-      } catch (remoteErr: any) {
-        if (remoteErr?.message === "EMAIL_EXISTS") {
-          form.setError("email", { message: "This email is already registered. Sign in instead." });
-          setLoading(false);
-          return;
-        }
-        if (remoteErr?.message === "USERNAME_EXISTS") {
-          form.setError("githubUsername", { message: "This GitHub username is already taken. Please choose another." });
-          setLoading(false);
-          return;
-        }
-        console.error("Supabase registration error:", remoteErr);
+      const profile = await registerStudentProfile({
+        name: data.name,
+        email: data.email,
+        password: data.password,
+        rollNumber: data.rollNumber,
+        course: data.course,
+        year: data.year,
+        bio: data.bio,
+        githubUsername: data.githubUsername,
+        linkedinUrl: data.linkedinUrl || undefined,
+        interests: data.interests,
+        skills: [],
+      });
+
+      if (!profile) {
         toast({
           title: "Registration Failed",
-          description: remoteErr?.message || "Could not create account in database. Please verify your Supabase auth settings.",
+          description: "Database is not reachable. Please check your network or try again later.",
           variant: "destructive",
         });
         setLoading(false);
@@ -319,22 +314,45 @@ const SignupForm = ({ onSuccess }: { onSuccess: (username: string) => void }) =>
           certifications: [],
           interests: data.interests,
         });
-      } catch (localErr: any) {
+      } catch (_localErr) {
         // If already in local store but created in remote, ignore duplicate local error
       }
 
-      await login(data.email, data.password);
+      // 3. Authenticate the student session
+      const loginOk = await login(data.email, data.password);
+      if (!loginOk) {
+        toast({
+          title: "Account Created! Verification Needed",
+          description: "Your profile was registered, but automatic login was not completed. If email confirmation is required, please check your inbox and then sign in.",
+        });
+        if (onSwitchToSignin) {
+          onSwitchToSignin();
+        }
+        setLoading(false);
+        return;
+      }
+
+      // 4. ONLY show Welcome message if profile creation AND login were verified
       toast({
         title: "Welcome to TechShastra! 🎉",
-        description: "Your profile has been created and saved to the database.",
+        description: "Your profile has been created and you are now signed in.",
       });
       onSuccess(data.githubUsername);
-    } catch (e: unknown) {
-      if (e instanceof Error && e.message === "EMAIL_EXISTS") {
+    } catch (remoteErr: any) {
+      if (remoteErr?.message === "EMAIL_EXISTS") {
         form.setError("email", { message: "This email is already registered. Sign in instead." });
-      } else {
-        toast({ title: "Error", description: "Something went wrong.", variant: "destructive" });
+        return;
       }
+      if (remoteErr?.message === "USERNAME_EXISTS") {
+        form.setError("githubUsername", { message: "This GitHub username is already taken. Please choose another." });
+        return;
+      }
+      console.error("Supabase registration error:", remoteErr);
+      toast({
+        title: "Registration Failed",
+        description: remoteErr?.message || "Could not create account in database. Please verify your details.",
+        variant: "destructive",
+      });
     } finally {
       setLoading(false);
     }
@@ -781,7 +799,7 @@ const Join = () => {
                 </CardHeader>
                 <CardContent className="p-10 pt-8">
                   {studentTab === "signup"
-                    ? <SignupForm onSuccess={handleSuccess} />
+                    ? <SignupForm onSuccess={handleSuccess} onSwitchToSignin={() => setStudentTab("signin")} />
                     : <SigninForm onSuccess={handleSuccess} />
                   }
                 </CardContent>

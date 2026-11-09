@@ -139,9 +139,18 @@ const Navbar = () => {
             )}
           </div>
 
-          {/* Mobile Menu Button */}
+          {/* Mobile: Join Now pill + Hamburger */}
           <div className="flex items-center gap-2 md:hidden">
-            <ThemeToggle />
+            {!studentSession && (
+              <Link to="/join" onClick={() => setIsMobileMenuOpen(false)}>
+                <Button
+                  size="sm"
+                  className="rounded-full px-4 py-1.5 text-[11px] font-light tracking-wider bg-primary/10 text-primary border border-primary/20 hover:bg-primary hover:text-primary-foreground transition-all duration-300"
+                >
+                  Join Now
+                </Button>
+              </Link>
+            )}
             <Button
               variant="ghost"
               size="icon"
@@ -250,6 +259,11 @@ const Navbar = () => {
                     </Link>
                   )}
                 </motion.div>
+              </div>
+
+              {/* Theme toggle — fixed to bottom-right corner of mobile menu */}
+              <div className="absolute bottom-6 right-6">
+                <ThemeToggle />
               </div>
             </motion.div>
           )}

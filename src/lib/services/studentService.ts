@@ -233,6 +233,12 @@ export const registerStudentProfile = async (
     throw new Error('Authentication user creation failed.');
   }
 
+  // Supabase security check: when email is already registered and email confirmation is on,
+  // Supabase returns an empty identities array to prevent user enumeration.
+  if (Array.isArray(authData.user.identities) && authData.user.identities.length === 0) {
+    throw new Error('EMAIL_EXISTS');
+  }
+
   const userId = authData.user.id;
   const username = lowerUsername;
 
