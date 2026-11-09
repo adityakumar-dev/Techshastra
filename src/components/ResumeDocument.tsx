@@ -1,413 +1,634 @@
 /**
- * ResumeDocument — printable A4 resume layout.
+ * ResumeDocument — Professional Executive Tech Resume Template (ATS-Compliant).
  *
- * Rendered as a React component so it gets full JSX composability,
- * then serialised to a self-contained HTML string and opened in a
- * new window for clean print / Save-as-PDF.
- *
- * Design: two-column layout (sidebar 30% | main 70%).
- * Accent colour: deep wine #2A0F14 (brand primary, print-safe).
- * All styles are inline so the document is self-contained.
+ * Designed to meet international tech hiring standards (FAANG / Tech Startup standard).
+ * High-contrast, clean typography, single-column flow with elegant dividers,
+ * categorized technical skills, and structured impact-driven project bullets.
  */
 
 import type { StudentProfile } from "@/lib/studentStore";
 import type { GHUser, GHRepo } from "@/lib/githubApi";
 import { langPercents } from "@/lib/githubApi";
 
-// ─── COLOUR TOKENS (print-safe, no CSS variables) ────────────────────────────
+export interface ResumeProjectItem {
+  id: string;
+  name: string;
+  techStack: string;
+  link?: string;
+  github?: string;
+  bullets: string[];
+}
 
-const C = {
-  accent:    "#2A0F14",   // wine primary
-  accentMid: "#5C2030",   // slightly lighter wine for sidebar bg
-  accentBg:  "#F9F5F5",   // near-white with warm tint
-  muted:     "#6B5B5D",   // muted text
-  border:    "#D4C4C6",   // soft border
-  white:     "#FFFFFF",
-  text:      "#1A0B0D",   // near-black body text
-  tag:       "#EDE0E2",   // pill background
-};
+export interface ResumeData {
+  fullName: string;
+  headline: string;
+  email: string;
+  phone: string;
+  location: string;
+  github: string;
+  linkedin: string;
+  portfolio: string;
+  summary: string;
+  skills: {
+    languages: string;
+    frameworks: string;
+    developerTools: string;
+    coreConcepts: string;
+  };
+  education: Array<{
+    id: string;
+    institution: string;
+    degree: string;
+    field: string;
+    startYear: string;
+    endYear: string;
+    grade?: string;
+  }>;
+  experience: Array<{
+    id: string;
+    role: string;
+    company: string;
+    startDate: string;
+    endDate: string;
+    description: string;
+  }>;
+  projects: ResumeProjectItem[];
+  certifications: Array<{
+    id: string;
+    name: string;
+    issuer: string;
+    date?: string;
+  }>;
+}
 
-const S = {
-  // Layout
-  page: `
-    font-family: 'Segoe UI', 'Helvetica Neue', Arial, sans-serif;
-    font-size: 10px;
-    color: ${C.text};
-    background: ${C.white};
-    margin: 0;
-    padding: 0;
-    line-height: 1.5;
-  `,
-  wrap: `
-    display: flex;
-    min-height: 297mm;
-    width: 210mm;
-    margin: 0 auto;
-  `,
-  // Sidebar
-  sidebar: `
-    width: 30%;
-    background: ${C.accent};
-    color: ${C.white};
-    padding: 28px 20px;
-    box-sizing: border-box;
-    flex-shrink: 0;
-  `,
-  // Main content
-  main: `
-    flex: 1;
-    padding: 28px 24px;
-    box-sizing: border-box;
-    background: ${C.white};
-  `,
-  // Name
-  name: `
-    font-size: 22px;
-    font-weight: 700;
-    letter-spacing: 0.03em;
-    line-height: 1.2;
-    margin: 0 0 2px 0;
-    color: ${C.accent};
-  `,
-  title: `
-    font-size: 11px;
-    color: ${C.muted};
-    font-weight: 400;
-    margin: 0 0 12px 0;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-  `,
-  // Section headers
-  sectionHead: `
-    font-size: 9px;
-    font-weight: 700;
-    letter-spacing: 0.15em;
-    text-transform: uppercase;
-    color: ${C.white};
-    margin: 20px 0 8px 0;
-    padding-bottom: 4px;
-    border-bottom: 1px solid rgba(255,255,255,0.25);
-  `,
-  mainSectionHead: `
-    font-size: 9px;
-    font-weight: 700;
-    letter-spacing: 0.15em;
-    text-transform: uppercase;
-    color: ${C.accent};
-    margin: 18px 0 8px 0;
-    padding-bottom: 4px;
-    border-bottom: 1.5px solid ${C.accent};
-  `,
-  // Contact rows in sidebar
-  contactRow: `
-    font-size: 9px;
-    color: rgba(255,255,255,0.85);
-    margin: 4px 0;
-    word-break: break-all;
-    display: flex;
-    align-items: flex-start;
-    gap: 5px;
-    line-height: 1.4;
-  `,
-  // Skill / interest pill
-  pill: `
-    display: inline-block;
-    background: rgba(255,255,255,0.15);
-    color: ${C.white};
-    font-size: 8.5px;
-    padding: 2px 7px;
-    border-radius: 20px;
-    margin: 2px 2px 2px 0;
-  `,
-  // Entry block (edu, exp)
-  entryTitle: `
-    font-size: 10.5px;
-    font-weight: 600;
-    margin: 0 0 1px 0;
-    color: ${C.text};
-  `,
-  entryMeta: `
-    font-size: 9px;
-    color: ${C.muted};
-    margin: 0 0 3px 0;
-  `,
-  entryDesc: `
-    font-size: 9px;
-    color: #3D2529;
-    margin: 3px 0 0 0;
-    line-height: 1.5;
-  `,
-  // Language bar
-  langRow: `
-    margin-bottom: 5px;
-  `,
-  langLabel: `
-    display: flex;
-    justify-content: space-between;
-    font-size: 8.5px;
-    color: rgba(255,255,255,0.8);
-    margin-bottom: 2px;
-  `,
-  langBarBg: `
-    height: 4px;
-    background: rgba(255,255,255,0.2);
-    border-radius: 2px;
-    overflow: hidden;
-  `,
-  langBarFill: (pct: number) => `
-    height: 100%;
-    background: rgba(255,255,255,0.75);
-    border-radius: 2px;
-    width: ${pct}%;
-  `,
-  // Repo row
-  repoRow: `
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    margin: 4px 0;
-    padding: 5px 8px;
-    background: ${C.tag};
-    border-radius: 4px;
-  `,
-  repoName: `
-    font-size: 9.5px;
-    font-weight: 600;
-    color: ${C.accent};
-  `,
-  repoMeta: `
-    font-size: 8.5px;
-    color: ${C.muted};
-  `,
-  // Cert row
-  certRow: `
-    margin: 4px 0;
-    font-size: 9px;
-  `,
-  dot: `
-    display: inline-block;
-    width: 5px;
-    height: 5px;
-    background: ${C.accent};
-    border-radius: 50%;
-    margin-right: 6px;
-    margin-bottom: 1px;
-    vertical-align: middle;
-  `,
-  // Section divider in main (subtle)
-  divider: `
-    border: none;
-    border-top: 1px solid ${C.border};
-    margin: 14px 0;
-  `,
-};
+const e = (s: string) =>
+  (s || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
 
-// ─── HTML GENERATOR ───────────────────────────────────────────────────────────
-
-const e = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-
-export const generateResumeHTML = (
+/**
+ * Generates an intelligent, high-impact default ResumeData object pre-filled
+ * with real student details and professional placeholder text where missing.
+ */
+export const getDefaultResumeData = (
   student: StudentProfile,
   ghUser: GHUser | null,
-  repos: GHRepo[],
-  langMap: Record<string, number>
-): string => {
-  const name = ghUser?.name ?? student.name;
-  const bio  = ghUser?.bio  ?? student.bio ?? "";
-  const langs = langPercents(langMap).slice(0, 8);
-  const topProjects = repos.filter(r => !r.fork && !r.archived)
+  repos: GHRepo[] = [],
+  langMap: Record<string, number> = {}
+): ResumeData => {
+  const name = student.name || ghUser?.name || "Student Developer";
+  const course = student.course || "B.Tech in Computer Science & Engineering";
+  const year = student.year ? `${student.year} Year` : "";
+
+  // Compute top languages from GitHub + profile skills
+  const topLangs = langPercents(langMap).slice(0, 6).map((l) => l.lang);
+  const allLangs = Array.from(new Set([...topLangs, ...student.skills.filter(s => ["JavaScript", "TypeScript", "Python", "C++", "Java", "C", "Go", "Rust", "HTML/CSS", "SQL"].includes(s))]));
+  const defaultLangs = allLangs.length > 0 ? allLangs.join(", ") : "JavaScript, TypeScript, Python, C++, SQL, HTML/CSS";
+
+  // Pre-fill top projects from GitHub repos
+  const topRepos = repos
+    .filter((r) => !r.fork && !r.archived)
     .sort((a, b) => b.stargazers_count - a.stargazers_count || b.forks_count - a.forks_count)
-    .slice(0, 6);
+    .slice(0, 3);
 
-  // ── SIDEBAR CONTENT ──────────────────────────────────────────────────────
+  const projects: ResumeProjectItem[] =
+    topRepos.length > 0
+      ? topRepos.map((r) => ({
+          id: String(r.id),
+          name: r.name.replace(/[-_]/g, " ").replace(/\b\w/g, (c) => c.toUpperCase()),
+          techStack: r.language ? `${r.language}, React, Git` : "React, TypeScript, Tailwind CSS",
+          link: r.homepage || undefined,
+          github: r.html_url,
+          bullets: [
+            r.description ||
+              `Architected and built a responsive full-stack application featuring modular component design and optimized performance.`,
+            `Engineered RESTful API integration, dynamic data persistence, and interactive user state management.`,
+            `Maintained clean code standards, comprehensive documentation, and deployed production builds to cloud hosting.`,
+          ],
+        }))
+      : [
+          {
+            id: "sample-proj-1",
+            name: "TechShastra Campus Collaboration Hub",
+            techStack: "React, TypeScript, Supabase, Tailwind CSS",
+            link: "https://techshastra.vmsbutu.live",
+            github: `https://github.com/${student.githubUsername || "techshastra"}`,
+            bullets: [
+              "Engineered an interactive student learning and project collaboration ecosystem for university engineering students.",
+              "Implemented secure authentication, real-time leaderboards, and code sandbox execution pipelines.",
+              "Designed responsive glassmorphism UI with Tailwind CSS and Framer Motion for high user engagement.",
+            ],
+          },
+          {
+            id: "sample-proj-2",
+            name: "Algorithmic Problem Solving & Code Runner",
+            techStack: "Python, JavaScript, Docker, REST API",
+            bullets: [
+              "Developed an automated code evaluation sandbox executing multi-language unit tests with sub-second feedback.",
+              "Implemented dynamic test case evaluation, memory constraint profiling, and error boundary handling.",
+            ],
+          },
+        ];
 
-  const contactHtml = [
-    student.email      && `<div style="${S.contactRow}"><span>✉</span><span>${e(student.email)}</span></div>`,
-    `<div style="${S.contactRow}"><span>⌥</span><span>github.com/${e(student.githubUsername)}</span></div>`,
-    student.linkedinUrl  && `<div style="${S.contactRow}"><span>in</span><span>${e(student.linkedinUrl.replace(/^https?:\/\//, ""))}</span></div>`,
-    student.portfolioUrl && `<div style="${S.contactRow}"><span>⊕</span><span>${e(student.portfolioUrl.replace(/^https?:\/\//, ""))}</span></div>`,
-    ghUser?.location   && `<div style="${S.contactRow}"><span>⌖</span><span>${e(ghUser.location)}</span></div>`,
-  ].filter(Boolean).join("\n");
+  // Education prefill
+  const education =
+    student.education && student.education.length > 0
+      ? student.education.map((ed) => ({
+          id: ed.id,
+          institution: ed.institution || "Uttarakhand Technical University (VMSB UTU)",
+          degree: ed.degree || course,
+          field: ed.field || "Computer Science and Engineering",
+          startYear: ed.startYear || "2023",
+          endYear: ed.endYear || "2027",
+          grade: ed.grade || "First Division",
+        }))
+      : [
+          {
+            id: "edu-default",
+            institution: "Veer Madho Singh Bhandari Uttarakhand Technical University",
+            degree: course,
+            field: "Computer Science & Engineering",
+            startYear: "2023",
+            endYear: "2027",
+            grade: "CGPA: 8.5 / 10",
+          },
+        ];
 
-  const skillsHtml = student.skills.length
-    ? `<div style="${S.sectionHead}">Skills</div>
-       <div>${student.skills.map(s => `<span style="${S.pill}">${e(s)}</span>`).join("")}</div>`
-    : "";
+  // Experience prefill
+  const experience =
+    student.experience && student.experience.length > 0
+      ? student.experience
+      : [
+          {
+            id: "exp-default",
+            role: "Technical Core Member & Contributor",
+            company: "TechShastra Technical Club · UTU",
+            startDate: "August 2023",
+            endDate: "Present",
+            description:
+              "Collaborated with peer engineers to build university open-source projects, conducted hands-on coding bootcamps on React and Data Structures, and organized annual technical hackathons.",
+          },
+        ];
 
-  const interestsHtml = student.interests.length
-    ? `<div style="${S.sectionHead}">Interests</div>
-       <div>${student.interests.map(i => `<span style="${S.pill}">${e(i)}</span>`).join("")}</div>`
-    : "";
+  return {
+    fullName: name,
+    headline: `${course}${year ? ` · ${year}` : ""} | Software Developer`,
+    email: student.email || "developer@techshastra.edu",
+    phone: student.rollNumber ? `Roll: ${student.rollNumber}` : "+91 ••••• •••••",
+    location: ghUser?.location || "Dehradun, Uttarakhand, India",
+    github: `github.com/${student.githubUsername || ""}`,
+    linkedin: student.linkedinUrl ? student.linkedinUrl.replace(/^https?:\/\//, "") : "",
+    portfolio: student.portfolioUrl ? student.portfolioUrl.replace(/^https?:\/\//, "") : "",
+    summary:
+      student.bio ||
+      `Passionate Computer Science student and software engineer with solid foundations in data structures, algorithms, and full-stack development. Experienced in building responsive web applications with modern frameworks like React and TypeScript. Eager to solve real-world problems and deliver high-impact software solutions.`,
+    skills: {
+      languages: defaultLangs,
+      frameworks: "React, Next.js, Node.js, Express.js, Tailwind CSS, Vite",
+      developerTools: "Git, GitHub, VS Code, Postman, Supabase, Linux, Vercel, Docker",
+      coreConcepts: "Data Structures & Algorithms, Object-Oriented Programming, RESTful APIs, Database Design, System Architecture",
+    },
+    education,
+    experience,
+    projects,
+    certifications: student.certifications || [],
+  };
+};
 
-  const langsHtml = langs.length
-    ? `<div style="${S.sectionHead}">Languages</div>
-       ${langs.map(l => `
-         <div style="${S.langRow}">
-           <div style="${S.langLabel}"><span>${e(l.lang)}</span><span>${l.pct}%</span></div>
-           <div style="${S.langBarBg}"><div style="${S.langBarFill(Math.min(l.pct, 100))}"></div></div>
-         </div>`).join("")}`
-    : "";
+/**
+ * Generates clean, ATS-compliant, single-column HTML for printing and PDF export.
+ */
+export const generateProfessionalResumeHTML = (data: ResumeData): string => {
+  const contactItems = [
+    data.email && `<a href="mailto:${e(data.email)}">✉ ${e(data.email)}</a>`,
+    data.phone && `<span>📞 ${e(data.phone)}</span>`,
+    data.location && `<span>📍 ${e(data.location)}</span>`,
+    data.linkedin && `<a href="https://${e(data.linkedin)}" target="_blank">in/${e(data.linkedin)}</a>`,
+    data.github && `<a href="https://${e(data.github)}" target="_blank">⌥ ${e(data.github)}</a>`,
+    data.portfolio && `<a href="https://${e(data.portfolio)}" target="_blank">🌐 ${e(data.portfolio)}</a>`,
+  ].filter(Boolean);
 
-  const certsHtml = student.certifications.length
-    ? `<div style="${S.sectionHead}">Certifications</div>
-       ${student.certifications.map(c => `
-         <div style="${S.certRow}; color: rgba(255,255,255,0.85)">
-           <strong>${e(c.name)}</strong><br>
-           <span style="opacity:0.7">${e(c.issuer)}${c.date ? ` · ${e(c.date)}` : ""}</span>
-         </div>`).join("")}`
-    : "";
+  const educationHTML = data.education
+    .map(
+      (ed) => `
+      <div class="entry">
+        <div class="entry-header">
+          <div>
+            <strong class="entry-title">${e(ed.institution)}</strong>
+            <span class="entry-subtitle">${e(ed.degree)}${ed.field ? ` in ${e(ed.field)}` : ""}${ed.grade ? ` · <span class="highlight">${e(ed.grade)}</span>` : ""}</span>
+          </div>
+          <span class="entry-date">${e(ed.startYear)} – ${e(ed.endYear || "Present")}</span>
+        </div>
+      </div>`
+    )
+    .join("");
 
-  const ghStatsHtml = `
-    <div style="${S.sectionHead}">GitHub</div>
-    <div style="font-size:8.5px; color:rgba(255,255,255,0.8); line-height:1.8">
-      ${repos.filter(r => !r.fork).length} repositories<br>
-      ${repos.reduce((s, r) => s + r.stargazers_count, 0)} total stars<br>
-      ${ghUser?.followers ?? 0} followers
-    </div>`;
+  const experienceHTML = data.experience
+    .map(
+      (exp) => `
+      <div class="entry">
+        <div class="entry-header">
+          <div>
+            <strong class="entry-title">${e(exp.role)}</strong>
+            <span class="entry-subtitle">@ ${e(exp.company)}</span>
+          </div>
+          <span class="entry-date">${e(exp.startDate)} – ${e(exp.endDate || "Present")}</span>
+        </div>
+        ${exp.description ? `<p class="entry-desc">${e(exp.description)}</p>` : ""}
+      </div>`
+    )
+    .join("");
 
-  // ── MAIN CONTENT ─────────────────────────────────────────────────────────
+  const projectsHTML = data.projects
+    .map((p) => {
+      const bulletsHTML = (p.bullets || [])
+        .filter((b) => b.trim().length > 0)
+        .map((b) => `<li>${e(b)}</li>`)
+        .join("");
 
-  const summaryHtml = bio
-    ? `<p style="font-size:9.5px; color:${C.muted}; font-style:italic; margin:0 0 4px 0; line-height:1.6">${e(bio)}</p>`
-    : "";
+      return `
+      <div class="entry">
+        <div class="entry-header">
+          <div>
+            <strong class="entry-title">${e(p.name)}</strong>
+            ${p.techStack ? `<span class="tech-tag">${e(p.techStack)}</span>` : ""}
+          </div>
+          <div class="entry-links">
+            ${p.link ? `<a href="${e(p.link)}" target="_blank" class="link-btn">Live ↗</a>` : ""}
+            ${p.github ? `<a href="${e(p.github)}" target="_blank" class="link-btn">Code ↗</a>` : ""}
+          </div>
+        </div>
+        ${bulletsHTML ? `<ul class="bullets">${bulletsHTML}</ul>` : ""}
+      </div>`;
+    })
+    .join("");
 
-  const educationHtml = student.education.length
-    ? `<div style="${S.mainSectionHead}">Education</div>
-       ${student.education.map(ed => `
-         <div style="margin-bottom:10px">
-           <div style="display:flex; justify-content:space-between; align-items:baseline">
-             <span style="${S.entryTitle}">${e(ed.institution)}</span>
-             <span style="${S.entryMeta}">${e(ed.startYear)} – ${e(ed.endYear ?? "Present")}</span>
-           </div>
-           <div style="${S.entryMeta}">${e(ed.degree)}${ed.field ? `, ${e(ed.field)}` : ""}${ed.grade ? ` · ${e(ed.grade)}` : ""}</div>
-         </div>`).join("")}`
-    : "";
-
-  const experienceHtml = student.experience.length
-    ? `<div style="${S.mainSectionHead}">Experience</div>
-       ${student.experience.map(x => `
-         <div style="margin-bottom:10px">
-           <div style="display:flex; justify-content:space-between; align-items:baseline">
-             <span style="${S.entryTitle}">${e(x.role)}</span>
-             <span style="${S.entryMeta}">${e(x.startDate)} – ${e(x.endDate ?? "Present")}</span>
-           </div>
-           <div style="${S.entryMeta}">${e(x.company)}</div>
-           ${x.description ? `<div style="${S.entryDesc}">${e(x.description)}</div>` : ""}
-         </div>`).join("")}`
-    : "";
-
-  const projectsHtml = topProjects.length
-    ? `<div style="${S.mainSectionHead}">Projects</div>
-       ${topProjects.map(r => `
-         <div style="${S.repoRow}">
-           <div>
-             <span style="${S.repoName}">${e(r.name)}</span>
-             ${r.description ? `<div style="font-size:8.5px; color:${C.muted}; margin-top:1px">${e(r.description)}</div>` : ""}
-           </div>
-           <div style="text-align:right; flex-shrink:0; margin-left:8px">
-             ${r.language ? `<div style="${S.repoMeta}">⬡ ${e(r.language)}</div>` : ""}
-             ${r.stargazers_count ? `<div style="${S.repoMeta}">★ ${r.stargazers_count}</div>` : ""}
-           </div>
-         </div>`).join("")}`
-    : "";
-
-  const courseHtml = student.course
-    ? `<span style="font-size:10px; color:${C.muted}; text-transform:uppercase; letter-spacing:0.08em">${e(student.course)}${student.year ? ` · ${e(student.year)}` : ""}</span>`
-    : "";
+  const certsHTML =
+    data.certifications && data.certifications.length > 0
+      ? data.certifications
+          .map(
+            (c) => `
+        <div class="cert-item">
+          <strong>${e(c.name)}</strong> — <span>${e(c.issuer)}</span>${c.date ? ` <span class="entry-date">(${e(c.date)})</span>` : ""}
+        </div>`
+          )
+          .join("")
+      : "";
 
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>${e(name)} — Resume</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>${e(data.fullName)} — Professional Resume</title>
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { ${S.page} }
-  @page { size: A4; margin: 0; }
-  @media print {
-    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  @page {
+    size: A4 portrait;
+    margin: 10mm 14mm 12mm 14mm;
   }
-  a { color: inherit; text-decoration: none; }
+  * {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+  }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    color: #1a1a1a;
+    background: #ffffff;
+    line-height: 1.45;
+    font-size: 9.5pt;
+    -webkit-font-smoothing: antialiased;
+  }
+  .resume-container {
+    max-width: 210mm;
+    margin: 0 auto;
+    padding: 12px 16px;
+    background: #ffffff;
+  }
+
+  /* ── HEADER ── */
+  header {
+    text-align: center;
+    border-bottom: 2px solid #2a0f14;
+    padding-bottom: 8px;
+    margin-bottom: 12px;
+  }
+  h1.name {
+    font-size: 22pt;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    color: #2a0f14;
+    text-transform: uppercase;
+    margin-bottom: 2px;
+  }
+  .headline {
+    font-size: 10pt;
+    color: #4a4a4a;
+    font-weight: 500;
+    margin-bottom: 6px;
+  }
+  .contact-bar {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 12px;
+    font-size: 8.5pt;
+    color: #555555;
+  }
+  .contact-bar a {
+    color: inherit;
+    text-decoration: none;
+    transition: color 0.2s;
+  }
+  .contact-bar a:hover {
+    color: #2a0f14;
+    text-decoration: underline;
+  }
+
+  /* ── SECTIONS ── */
+  section {
+    margin-bottom: 11px;
+  }
+  .section-title {
+    font-size: 10pt;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: #2a0f14;
+    border-bottom: 1px solid #dcdcdc;
+    padding-bottom: 2px;
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .section-title::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: #e5e5e5;
+  }
+
+  /* ── SUMMARY ── */
+  .summary-text {
+    font-size: 9pt;
+    color: #333333;
+    line-height: 1.45;
+    text-align: justify;
+  }
+
+  /* ── ENTRIES ── */
+  .entry {
+    margin-bottom: 7px;
+    page-break-inside: avoid;
+  }
+  .entry:last-child {
+    margin-bottom: 0;
+  }
+  .entry-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 8px;
+    margin-bottom: 2px;
+  }
+  .entry-title {
+    font-size: 9.5pt;
+    font-weight: 700;
+    color: #111111;
+  }
+  .entry-subtitle {
+    font-size: 9pt;
+    color: #444444;
+    margin-left: 4px;
+    font-weight: 400;
+  }
+  .entry-date {
+    font-size: 8.5pt;
+    color: #666666;
+    font-style: italic;
+    white-space: nowrap;
+  }
+  .entry-desc {
+    font-size: 8.8pt;
+    color: #333333;
+    line-height: 1.4;
+    margin-top: 2px;
+  }
+  .entry-links {
+    display: flex;
+    gap: 6px;
+    font-size: 8pt;
+  }
+  .link-btn {
+    color: #2a0f14;
+    text-decoration: none;
+    font-weight: 600;
+    background: #f4eff1;
+    padding: 1px 6px;
+    border-radius: 4px;
+  }
+  .link-btn:hover {
+    background: #2a0f14;
+    color: #ffffff;
+  }
+  .tech-tag {
+    font-size: 8pt;
+    font-weight: 500;
+    color: #555555;
+    background: #f0f0f0;
+    padding: 1px 6px;
+    border-radius: 3px;
+    margin-left: 6px;
+    display: inline-block;
+  }
+  .highlight {
+    font-weight: 600;
+    color: #2a0f14;
+  }
+
+  /* ── BULLETS ── */
+  ul.bullets {
+    margin: 3px 0 3px 18px;
+    padding: 0;
+  }
+  ul.bullets li {
+    font-size: 8.8pt;
+    color: #333333;
+    line-height: 1.4;
+    margin-bottom: 2px;
+  }
+
+  /* ── SKILLS ── */
+  .skills-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 8.8pt;
+  }
+  .skills-table td {
+    padding: 2px 0;
+    vertical-align: top;
+  }
+  .skill-category {
+    font-weight: 700;
+    color: #2a0f14;
+    width: 155px;
+    padding-right: 8px;
+  }
+  .skill-list {
+    color: #333333;
+  }
+
+  /* ── CERTS ── */
+  .cert-item {
+    font-size: 8.8pt;
+    color: #333333;
+    margin-bottom: 3px;
+  }
+
+  /* ── PRINT RULES ── */
+  @media print {
+    body {
+      background: #ffffff !important;
+      -webkit-print-color-adjust: exact !important;
+      print-color-adjust: exact !important;
+    }
+    .resume-container {
+      padding: 0 !important;
+      max-width: 100% !important;
+    }
+    .link-btn {
+      background: none !important;
+      padding: 0 !important;
+      text-decoration: underline !important;
+    }
+  }
 </style>
 </head>
 <body>
-<div style="${S.wrap}">
+<div class="resume-container">
 
-  <!-- SIDEBAR -->
-  <aside style="${S.sidebar}">
-    <!-- Avatar initials -->
-    <div style="width:64px; height:64px; border-radius:50%; background:rgba(255,255,255,0.15);
-         display:flex; align-items:center; justify-content:center; margin-bottom:16px;
-         font-size:24px; font-weight:700; color:${C.white}">
-      ${e(name.charAt(0).toUpperCase())}
+  <!-- ── HEADER ── -->
+  <header>
+    <h1 class="name">${e(data.fullName)}</h1>
+    ${data.headline ? `<div class="headline">${e(data.headline)}</div>` : ""}
+    <div class="contact-bar">
+      ${contactItems.join(" • ")}
     </div>
+  </header>
 
-    <div style="${S.sectionHead}; margin-top:0; border:none; padding:0; font-size:8px">Contact</div>
-    ${contactHtml}
-    ${langsHtml}
-    ${skillsHtml}
-    ${interestsHtml}
-    ${certsHtml}
-    ${ghStatsHtml}
-  </aside>
+  <!-- ── PROFESSIONAL SUMMARY ── -->
+  ${
+    data.summary
+      ? `
+  <section>
+    <h2 class="section-title">Professional Summary</h2>
+    <p class="summary-text">${e(data.summary)}</p>
+  </section>`
+      : ""
+  }
 
-  <!-- MAIN -->
-  <main style="${S.main}">
+  <!-- ── TECHNICAL SKILLS ── -->
+  <section>
+    <h2 class="section-title">Technical Skills</h2>
+    <table class="skills-table">
+      ${data.skills.languages ? `<tr><td class="skill-category">Languages:</td><td class="skill-list">${e(data.skills.languages)}</td></tr>` : ""}
+      ${data.skills.frameworks ? `<tr><td class="skill-category">Frameworks & Libraries:</td><td class="skill-list">${e(data.skills.frameworks)}</td></tr>` : ""}
+      ${data.skills.developerTools ? `<tr><td class="skill-category">Developer Tools & Cloud:</td><td class="skill-list">${e(data.skills.developerTools)}</td></tr>` : ""}
+      ${data.skills.coreConcepts ? `<tr><td class="skill-category">Core Concepts:</td><td class="skill-list">${e(data.skills.coreConcepts)}</td></tr>` : ""}
+    </table>
+  </section>
 
-    <!-- Header -->
-    <h1 style="${S.name}">${e(name)}</h1>
-    ${courseHtml ? `<p style="${S.title}">${courseHtml}</p>` : ""}
-    ${summaryHtml}
+  <!-- ── KEY PROJECTS ── -->
+  ${
+    data.projects && data.projects.length > 0
+      ? `
+  <section>
+    <h2 class="section-title">Featured Projects</h2>
+    ${projectsHTML}
+  </section>`
+      : ""
+  }
 
-    <hr style="${S.divider}">
+  <!-- ── EXPERIENCE & LEADERSHIP ── -->
+  ${
+    data.experience && data.experience.length > 0
+      ? `
+  <section>
+    <h2 class="section-title">Experience & Leadership</h2>
+    ${experienceHTML}
+  </section>`
+      : ""
+  }
 
-    ${educationHtml}
-    ${experienceHtml}
-    ${projectsHtml}
+  <!-- ── EDUCATION ── -->
+  <section>
+    <h2 class="section-title">Education</h2>
+    ${educationHTML}
+  </section>
 
-    ${!educationHtml && !experienceHtml && !projectsHtml ? `
-      <div style="font-size:9px; color:${C.muted}; font-style:italic; margin-top:16px">
-        Complete your profile to populate this resume with education, experience, and projects.
-      </div>` : ""}
-  </main>
+  <!-- ── CERTIFICATIONS ── -->
+  ${
+    certsHTML
+      ? `
+  <section>
+    <h2 class="section-title">Certifications & Achievements</h2>
+    ${certsHTML}
+  </section>`
+      : ""
+  }
+
 </div>
 </body>
 </html>`;
 };
 
-// ─── OPEN HELPERS ────────────────────────────────────────────────────────────
+// ─── WINDOW HELPERS ──────────────────────────────────────────────────────────
 
 const openWindow = (html: string): Window | null => {
   const blob = new Blob([html], { type: "text/html;charset=utf-8" });
   const url = URL.createObjectURL(blob);
-  const win = window.open(url, "_blank", "width=900,height=700");
+  const win = window.open(url, "_blank", "width=920,height=800");
   if (!win) {
-    alert("Please allow popups to preview/print your resume.");
+    alert("Please allow popups in your browser to preview or print your resume.");
     URL.revokeObjectURL(url);
     return null;
   }
-  // Automatically revoke the object URL after load
   setTimeout(() => URL.revokeObjectURL(url), 60000);
   return win;
 };
 
-/** Open resume in new window — no print dialog, student can review first */
+/** Open resume in new tab for preview */
 export const previewResume = (
   student: StudentProfile,
   ghUser: GHUser | null,
-  repos: GHRepo[],
-  langMap: Record<string, number>
+  repos: GHRepo[] = [],
+  langMap: Record<string, number> = {}
 ) => {
-  openWindow(generateResumeHTML(student, ghUser, repos, langMap));
+  const data = getDefaultResumeData(student, ghUser, repos, langMap);
+  openWindow(generateProfessionalResumeHTML(data));
 };
 
-/** Open resume in new window then immediately trigger print dialog */
+/** Open resume in print window then trigger browser print dialog */
 export const openResumePrintWindow = (
   student: StudentProfile,
   ghUser: GHUser | null,
-  repos: GHRepo[],
-  langMap: Record<string, number>
+  repos: GHRepo[] = [],
+  langMap: Record<string, number> = {}
 ) => {
-  const win = openWindow(generateResumeHTML(student, ghUser, repos, langMap));
-  if (win) setTimeout(() => win.print(), 600);
+  const data = getDefaultResumeData(student, ghUser, repos, langMap);
+  printResumeData(data);
+};
+
+/** Print custom edited resume data */
+export const printResumeData = (data: ResumeData) => {
+  const win = openWindow(generateProfessionalResumeHTML(data));
+  if (win) {
+    setTimeout(() => {
+      win.focus();
+      win.print();
+    }, 600);
+  }
 };

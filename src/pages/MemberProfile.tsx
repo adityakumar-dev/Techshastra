@@ -41,6 +41,7 @@ import {
 } from "@/lib/githubApi";
 import { downloadLatex } from "@/lib/resumeExport";
 import { openResumePrintWindow, previewResume } from "@/components/ResumeDocument";
+import ResumeBuilderModal from "@/components/ResumeBuilderModal";
 import { useStudentAuth } from "@/hooks/useStudentAuth";
 import ContributionGraph from "@/components/ContributionGraph";
 import { buildAutoProfile, profileNeedsAutoFill } from "@/lib/autoProfile";
@@ -224,6 +225,7 @@ const MemberProfile = () => {
   const [langMap, setLangMap] = useState<GHLanguageMap>({});
   const [status, setStatus] = useState<LoadStatus>("loading");
   const [repoFilter, setRepoFilter] = useState<"top" | "all" | "starred">("top");
+  const [resumeBuilderOpen, setResumeBuilderOpen] = useState(false);
 
 
   const isOwn = session?.githubUsername?.toLowerCase() === username?.toLowerCase();
@@ -246,6 +248,7 @@ const MemberProfile = () => {
             ...remote,
             githubUsername: remote.github_username || remote.githubUsername,
             name: remote.name || remote.username,
+            avatar: remote.avatar || remote.avatar_url || (remote as any).profiles?.avatar_url,
             linkedinUrl: remote.linkedin_url || (remote as any).linkedinUrl,
             portfolioUrl: remote.portfolio_url || (remote as any).portfolioUrl,
             education: remote.education || [],
@@ -384,23 +387,52 @@ const MemberProfile = () => {
 
         {/* ── HERO ─────────────────────────────────────────────────────── */}
         <motion.div initial="hidden" animate="show" variants={stagger}
-          className="flex flex-col md:flex-row items-start gap-8 mb-10">
+          className="flex flex-col md:flex-row items-start gap-6 md:gap-8 mb-8 md:mb-10">
 
-          {/* Avatar */}
-          <motion.div variants={fadeUp} className="flex-shrink-0">
-            <div className="w-28 h-28 md:w-36 md:h-36 rounded-3xl overflow-hidden ring-4 ring-primary/20 shadow-2xl">
-              {ghUser?.avatar_url
-                ? <img src={ghUser.avatar_url} alt={student.name} className="w-full h-full object-cover" />
-                : <div className="w-full h-full bg-primary/10 flex items-center justify-center">
-                    <span className="text-4xl font-heading text-primary">{student.name[0].toUpperCase()}</span>
+          {/* Top Row on Mobile: Avatar on Left, Name & Details on Right | Desktop: Left Avatar */}
+          <div className="flex items-center md:items-start gap-4 md:gap-8 w-full md:w-auto">
+            {/* Avatar */}
+            <motion.div variants={fadeUp} className="flex-shrink-0">
+              <div className="w-20 h-20 xs:w-24 xs:h-24 sm:w-28 sm:h-28 md:w-36 md:h-36 rounded-2xl md:rounded-3xl overflow-hidden ring-4 ring-primary/20 shadow-xl bg-card">
+                {student.avatar || ghUser?.avatar_url || student.githubUsername ? (
+                  <img
+                    src={student.avatar || ghUser?.avatar_url || `https://github.com/${student.githubUsername}.png`}
+                    alt={student.name}
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <div className="w-full h-full bg-primary/10 flex items-center justify-center">
+                    <span className="text-3xl md:text-4xl font-heading text-primary">{student.name[0]?.toUpperCase() ?? "U"}</span>
                   </div>
-              }
+                )}
+              </div>
+            </motion.div>
+
+            {/* Mobile-only Name + Username + Course next to Avatar */}
+            <div className="flex-1 min-w-0 md:hidden space-y-1">
+              <motion.div variants={fadeUp}>
+                <h1 className="text-2xl xs:text-3xl font-heading font-light tracking-tight text-foreground leading-tight">
+                  {student.name || ghUser?.name}
+                </h1>
+                <div className="flex items-center gap-2 mt-1 flex-wrap text-xs">
+                  <p className="text-foreground/50 font-light">@{student.githubUsername}</p>
+                  <CopyLinkButton url={profileUrl} />
+                </div>
+              </motion.div>
+
+              {student.course && (
+                <div className="text-xs text-foreground/60 font-light flex items-center gap-1.5 pt-0.5">
+                  <GraduationCap size={12} className="text-primary shrink-0" />
+                  <span className="truncate">{student.course}{student.year ? `, ${student.year}` : ""}</span>
+                </div>
+              )}
             </div>
-          </motion.div>
+          </div>
 
           {/* Info */}
-          <div className="flex-1 min-w-0 space-y-3">
-            <motion.div variants={fadeUp}>
+          <div className="flex-1 min-w-0 space-y-3 w-full">
+            {/* Desktop-only Name + Username */}
+            <motion.div variants={fadeUp} className="hidden md:block">
               <h1 className="text-3xl md:text-5xl font-heading font-light tracking-tight text-foreground">
                 {ghUser?.name ?? student.name}
               </h1>
@@ -411,20 +443,20 @@ const MemberProfile = () => {
             </motion.div>
 
             {(ghUser?.bio ?? student.bio) && (
-              <motion.p variants={fadeUp} className="text-foreground/70 font-light max-w-2xl italic">
+              <motion.p variants={fadeUp} className="text-xs sm:text-sm md:text-base text-foreground/70 font-light max-w-2xl italic">
                 {ghUser?.bio ?? student.bio}
               </motion.p>
             )}
 
             {/* Meta row */}
-            <motion.div variants={fadeUp} className="flex flex-wrap gap-4 text-xs text-foreground/50 font-light">
-              {ghUser?.location && <span className="flex items-center gap-1"><MapPin size={12} />{ghUser.location}</span>}
-              {ghUser?.company && <span className="flex items-center gap-1"><Building2 size={12} />{ghUser.company}</span>}
+            <motion.div variants={fadeUp} className="flex flex-wrap gap-x-4 gap-y-2 text-xs text-foreground/50 font-light">
               {student.course && (
-                <span className="flex items-center gap-1">
+                <span className="hidden md:flex items-center gap-1">
                   <GraduationCap size={12} />{student.course}{student.year ? `, ${student.year}` : ""}
                 </span>
               )}
+              {ghUser?.location && <span className="flex items-center gap-1"><MapPin size={12} />{ghUser.location}</span>}
+              {ghUser?.company && <span className="flex items-center gap-1"><Building2 size={12} />{ghUser.company}</span>}
               {ghSince && (
                 <span className="flex items-center gap-1"><Calendar size={12} />On GitHub since {ghSince}</span>
               )}
@@ -437,7 +469,7 @@ const MemberProfile = () => {
             </motion.div>
 
             {/* Social badges */}
-            <motion.div variants={fadeUp} className="flex flex-wrap gap-2">
+            <motion.div variants={fadeUp} className="flex flex-wrap gap-2 pt-1">
               <a href={`https://github.com/${student.githubUsername}`} target="_blank" rel="noopener noreferrer">
                 <Badge variant="secondary" className="gap-1.5 px-3 py-1.5 text-xs font-light hover:bg-primary hover:text-primary-foreground transition-all cursor-pointer">
                   <Github size={12} /> GitHub
@@ -461,14 +493,26 @@ const MemberProfile = () => {
           </div>
 
           {/* Actions */}
-          <motion.div variants={fadeUp} className="grid grid-cols-2 sm:grid-cols-3 md:flex md:flex-col gap-2 w-full md:w-auto flex-shrink-0 min-w-[140px]">
+          <motion.div variants={fadeUp} className="grid grid-cols-2 sm:grid-cols-3 md:flex md:flex-col gap-2 w-full md:w-auto flex-shrink-0 min-w-[170px] pt-1 md:pt-0">
             {isOwn && (
               <>
-                <Button size="sm" variant="outline" className="rounded-full gap-2 justify-center md:justify-start text-xs"
+                <Button size="sm" variant="outline" className="rounded-full gap-2 justify-center md:justify-start text-xs font-light"
                   onClick={() => navigate(`/members/${username}/edit`)}>
                   <Edit3 size={13} /> Edit Profile
                 </Button>
-                <Button size="sm" variant="outline" className="rounded-full gap-2 justify-center md:justify-start text-xs"
+                <Button size="sm" className="rounded-full gap-2 justify-center md:justify-start text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 shadow-sm"
+                  onClick={() => navigate("/student")}>
+                  <Code2 size={13} /> Coding Hub
+                </Button>
+                <Button size="sm" variant="outline" className="rounded-full gap-2 justify-center md:justify-start text-xs font-light"
+                  onClick={() => setResumeBuilderOpen(true)}>
+                  <FileText size={13} /> Resume
+                </Button>
+                <Button size="sm" variant="outline" className="rounded-full gap-2 justify-center md:justify-start text-xs font-light"
+                  onClick={() => openResumePrintWindow(student, ghUser, repos, langMap)}>
+                  <Printer size={13} /> Print PDF
+                </Button>
+                <Button size="sm" variant="outline" className="rounded-full gap-2 justify-center md:justify-start text-xs font-light"
                   title="Re-sync skills, bio and experience from your latest GitHub data"
                   onClick={async () => {
                     if (!username || !student || !ghUser) return;
@@ -500,19 +544,9 @@ const MemberProfile = () => {
                   }}>
                   <RefreshCw size={13} /> Sync GitHub
                 </Button>
-                <Button size="sm" variant="outline" className="rounded-full gap-2 justify-center md:justify-start text-xs" onClick={() => previewResume(student, ghUser, repos, langMap)}>
-                  <Eye size={13} /> Resume
-                </Button>
-                <Button size="sm" variant="outline" className="rounded-full gap-2 justify-center md:justify-start text-xs" onClick={() => openResumePrintWindow(student, ghUser, repos, langMap)}>
-                  <Printer size={13} /> Print PDF
-                </Button>
-                <Button size="sm" variant="outline" className="rounded-full gap-2 justify-center md:justify-start text-xs"
+                <Button size="sm" variant="outline" className="rounded-full gap-2 justify-center md:justify-start text-xs font-light"
                   onClick={() => downloadLatex(student, ghUser, repos, langMap)}>
                   <FileText size={13} /> LaTeX
-                </Button>
-                <Button size="sm" variant="ghost" className="rounded-full gap-2 justify-center md:justify-start text-xs text-foreground/50"
-                  onClick={() => { logout(); navigate("/join"); }}>
-                  <LogOut size={13} /> Sign Out
                 </Button>
               </>
             )}
@@ -776,6 +810,21 @@ const MemberProfile = () => {
           </div>
         </div>
       </div>
+
+      {student && (
+        <ResumeBuilderModal
+          open={resumeBuilderOpen}
+          onOpenChange={setResumeBuilderOpen}
+          student={student}
+          ghUser={ghUser}
+          repos={repos}
+          langMap={langMap}
+          onSaveToProfile={(updates) => {
+            const updated = updateStudent(student.id, updates);
+            if (updated) setStudent(updated);
+          }}
+        />
+      )}
 
       <Footer />
     </div>
